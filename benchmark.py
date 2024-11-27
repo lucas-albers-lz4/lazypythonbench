@@ -338,11 +338,8 @@ def get_venv_python(venv_path):
 def run_focused_comparison():
     """Run both test suite and performance comparisons for multiple Python versions"""
     python_versions = [
-        "/opt/homebrew/bin/python3.9",
-        "/opt/homebrew/bin/python3.10",
         "/opt/homebrew/bin/python3.11",
         "/opt/homebrew/bin/python3.12",
-        "/opt/homebrew/bin/python3.13",
     ]
     
     output_dir = Path("comparison_results")
