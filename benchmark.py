@@ -96,13 +96,14 @@ def generate_test_comparison_report(files, output_dir):
             results.append(data)
     
     # Prepare table data
-    headers = ["Python Version", "Tests Run", "Passed", "Failed"]
+    headers = ["Python Version", "Tests Run", "Passed", "Failed", "Skipped"]
     table_data = [
         [
             r['python_version'], 
             r['tests_run'], 
-            r['tests_run'] - r['tests_failed'],
-            r['tests_failed']
+            r['tests_run'] - r['tests_failed'] - r['tests_skipped'],
+            r['tests_failed'],
+            r['tests_skipped']
         ]
         for r in results
     ]
@@ -113,18 +114,24 @@ def generate_test_comparison_report(files, output_dir):
         f.write(tabulate(table_data, headers=headers, tablefmt="pipe", numalign="right"))
         f.write("\n\n")
         
-        # Failed Tests by Version
-        f.write("## Failed Tests by Version\n\n")
-        has_failures = False
+        # Failed and Skipped Tests by Version
+        f.write("## Failed and Skipped Tests by Version\n\n")
+        has_issues = False
         for result in results:
-            if result['failed_tests']:
-                has_failures = True
+            if result['failed_tests'] or result['skipped_tests']:
+                has_issues = True
                 f.write(f"### Python {result['python_version']}\n")
-                for test in result['failed_tests']:
-                    f.write(f"- {test['name']}: {test['error']}\n")
+                if result['failed_tests']:
+                    f.write("#### Failed:\n")
+                    for test in result['failed_tests']:
+                        f.write(f"- {test['name']}: {test['error']}\n")
+                if result['skipped_tests']:
+                    f.write("#### Skipped:\n")
+                    for test in result['skipped_tests']:
+                        f.write(f"- {test['name']}: {test['error']}\n")
                 f.write("\n")
-        if not has_failures:
-            f.write("*No test failures in any version*\n\n")
+        if not has_issues:
+            f.write("*No test failures or skips in any version*\n\n")
         
         # Tests Failing in All Versions
         f.write("## Tests Failing in All Versions\n\n")
@@ -195,7 +202,9 @@ def parse_test_output(output, python_version):
         'python_version': python_version,
         'tests_run': 0,
         'tests_failed': 0,
-        'failed_tests': []
+        'tests_skipped': 0,
+        'failed_tests': [],
+        'skipped_tests': []
     }
     
     # Process output line by line looking for test results
@@ -213,10 +222,10 @@ def parse_test_output(output, python_version):
                     'error': line.strip()
                 })
             
-            # Handle skipped tests (counted as failures but marked differently)
+            # Handle skipped tests separately
             elif 'skipped' in line:
-                results['tests_failed'] += 1
-                results['failed_tests'].append({
+                results['tests_skipped'] += 1
+                results['skipped_tests'].append({
                     'name': line.split(':')[0].strip() if ':' in line else line.strip(),
                     'error': f"{line.strip()} (skipped)"
                 })
@@ -338,8 +347,11 @@ def get_venv_python(venv_path):
 def run_focused_comparison():
     """Run both test suite and performance comparisons for multiple Python versions"""
     python_versions = [
+        "/opt/homebrew/bin/python3.9",
+        "/opt/homebrew/bin/python3.10",
         "/opt/homebrew/bin/python3.11",
         "/opt/homebrew/bin/python3.12",
+        "/opt/homebrew/bin/python3.13",
     ]
     
     output_dir = Path("comparison_results")
