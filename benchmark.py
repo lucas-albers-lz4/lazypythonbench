@@ -7,6 +7,7 @@ import json
 import os
 from tabulate import tabulate
 import re
+import argparse
 
 def ensure_requirements(python_path):
     """Ensure all required packages are installed for current user"""
@@ -344,8 +345,19 @@ def get_venv_python(venv_path):
     """Get path to Python executable in virtual environment"""
     return str(venv_path / "bin" / "python")
 
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description='Run Python version comparisons')
+    parser.add_argument('--disable-test', action='store_true',
+                      help='Skip running unit tests and test comparison')
+    parser.add_argument('--disable-benchmark', action='store_true',
+                      help='Skip running performance benchmarks')
+    return parser.parse_args()
+
 def run_focused_comparison():
     """Run both test suite and performance comparisons for multiple Python versions"""
+    args = parse_arguments()
+    
     python_versions = [
         "/opt/homebrew/bin/python3.9",
         "/opt/homebrew/bin/python3.10",
@@ -357,46 +369,58 @@ def run_focused_comparison():
     output_dir = Path("comparison_results")
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Create comparison venv first (using first Python version)
-    comparison_venv = create_venv_if_needed(python_versions[0])
-    install_in_venv(comparison_venv, ["pyperf"])  # Only install pyperf in comparison venv
-    
-    # Run tests and benchmarks for each Python version
     test_results = []
     perf_results = []
     
-    for python_path in python_versions:
-        # Create venv for this Python version
-        benchmark_venv = create_venv_if_needed(python_path)
-        install_in_venv(benchmark_venv, ["pyperformance"])  # Only install pyperformance
-        
-        venv_python = get_venv_python(benchmark_venv)
-        
-        # Run tests and benchmarks using venv Python
-        print(f"\n=== Running tests and benchmarks for {python_path} ===")
-        test_result = run_tests(venv_python, output_dir)
-        if test_result:
-            test_results.append(test_result)
-        
-        perf_result = run_benchmark(venv_python, output_dir)
-        if perf_result:
-            perf_results.append(perf_result)
+    # Only create comparison venv if benchmarks are enabled
+    comparison_venv = None
+    if not args.disable_benchmark:
+        comparison_venv = create_venv_if_needed(python_versions[0])
+        install_in_venv(comparison_venv, ["pyperf"])
     
-    # Generate reports
-    if len(test_results) >= 2:
+    for python_path in python_versions:
+        benchmark_venv = None
+        venv_python = None
+        
+        # Create venv based on what we're running
+        if not args.disable_benchmark:
+            benchmark_venv = create_venv_if_needed(python_path)
+            install_in_venv(benchmark_venv, ["pyperformance"])
+            venv_python = get_venv_python(benchmark_venv)
+        elif not args.disable_test:
+            # We still need a venv for tests
+            benchmark_venv = create_venv_if_needed(python_path)
+            venv_python = get_venv_python(benchmark_venv)
+            
+        print(f"\n=== Processing {python_path} ===")
+        
+        # Run tests if enabled
+        if not args.disable_test:
+            test_result = run_tests(venv_python, output_dir)
+            if test_result:
+                test_results.append(test_result)
+        
+        # Run benchmarks if enabled
+        if not args.disable_benchmark:
+            perf_result = run_benchmark(venv_python, output_dir)
+            if perf_result:
+                perf_results.append(perf_result)
+    
+    # Generate test report if tests were run and we have results
+    if not args.disable_test and len(test_results) >= 2:
         print("\n=== Test Suite Comparison Results ===")
         test_report = generate_test_comparison_report(test_results, output_dir)
         print(f"Test comparison report: {test_report}")
 
-    if len(perf_results) >= 2:
+    # Run benchmark comparisons if benchmarks were run and we have results
+    if not args.disable_benchmark and len(perf_results) >= 2:
         print("\n=== Performance Comparison Results ===")
         comparison_python = get_venv_python(comparison_venv)
         
-        # Do pairwise comparisons using the comparison venv
         for i in range(len(perf_results)-1):
             print(f"\nComparing {Path(perf_results[i]).name} vs {Path(perf_results[i+1]).name}:")
             subprocess.run([
-                comparison_python,  # Use the venv Python with pyperf installed
+                comparison_python,
                 "-m", "pyperf", "compare_to",
                 "--table", str(perf_results[i]), str(perf_results[i+1])
             ], check=True)
