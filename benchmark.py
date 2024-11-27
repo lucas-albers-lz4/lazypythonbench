@@ -6,6 +6,7 @@ from datetime import datetime
 import json
 import os
 from tabulate import tabulate
+import re
 
 def ensure_requirements(python_path):
     """Ensure all required packages are installed for current user"""
@@ -41,11 +42,13 @@ def run_benchmark(python_path, output_dir):
     python_version = subprocess.check_output([python_path, "-V"]).decode().split()[1]
     output_file = output_dir / f"python{python_version}_{timestamp}.json"
     
-    # Set environment variables to suppress pip warnings
+    # Set environment variables to suppress pip warnings and virtualenv output
     env = os.environ.copy()
     env['PIP_DISABLE_PIP_VERSION_CHECK'] = '1'
     env['PYTHONWARNINGS'] = 'ignore:DEPRECATION'
     env['VIRTUALENV_NO_PERIODIC_UPDATE'] = '1'
+    env['PIP_QUIET'] = '1'  # Added to reduce pip output
+    env['VIRTUALENV_QUIET'] = '1'  # Added to reduce virtualenv output
     
     # Minimal set of fast benchmarks with reduced iterations
     cmd = [
@@ -54,7 +57,7 @@ def run_benchmark(python_path, output_dir):
         "--benchmarks", "json_dumps,richards",  # Just two fast benchmarks
         "--fast",  # Reduce number of iterations
         "--output", str(output_file),
-        "--inherit-environ", "PIP_DISABLE_PIP_VERSION_CHECK,PYTHONWARNINGS,VIRTUALENV_NO_PERIODIC_UPDATE"
+        "--inherit-environ", "PIP_DISABLE_PIP_VERSION_CHECK,PYTHONWARNINGS,VIRTUALENV_NO_PERIODIC_UPDATE,PIP_QUIET,VIRTUALENV_QUIET"
     ]
     
     try:
@@ -77,9 +80,14 @@ def generate_test_comparison_report(files, output_dir):
             results.append(data)
     
     # Prepare table data
-    headers = ["Python Version", "Tests Run", "Failed"]
+    headers = ["Python Version", "Tests Run", "Passed", "Failed"]
     table_data = [
-        [r['python_version'], r['tests_run'], r['tests_failed']]
+        [
+            r['python_version'], 
+            r['tests_run'], 
+            r['tests_run'] - r['tests_failed'],
+            r['tests_failed']
+        ]
         for r in results
     ]
     
@@ -87,7 +95,7 @@ def generate_test_comparison_report(files, output_dir):
         # Main summary with tabulate
         f.write("# Python Test Suite Comparison Report\n\n")
         f.write(tabulate(table_data, headers=headers, tablefmt="pipe", numalign="right"))
-        f.write("\n\n")  # Extra newlines for markdown spacing
+        f.write("\n\n")
         
         # Failed Tests by Version
         f.write("## Failed Tests by Version\n\n")
@@ -97,42 +105,53 @@ def generate_test_comparison_report(files, output_dir):
                 has_failures = True
                 f.write(f"### Python {result['python_version']}\n")
                 for test in result['failed_tests']:
-                    f.write(f"- {test}\n")
-        
+                    f.write(f"- {test['name']}: {test['error']}\n")
+                f.write("\n")
         if not has_failures:
-            f.write("*No test failures in any version*\n")
+            f.write("*No test failures in any version*\n\n")
+        
+        # Tests Failing in All Versions
+        f.write("## Tests Failing in All Versions\n\n")
+        all_failures = [set((test['name'], test['error']) for test in result['failed_tests']) for result in results]
+        common_failures = set.intersection(*all_failures)
+        
+        if common_failures:
+            for name, error in sorted(common_failures):
+                f.write(f"- {name}\n  {error}\n")
+            f.write("\n")
+        else:
+            f.write("*No tests fail in all versions*\n\n")
         
         # Failure Differences
-        f.write("\n## Failure Differences Between Versions\n\n")
-        base = results[0]
-        base_failures = set(base['failed_tests'])
-        
-        for current in results[1:]:
-            current_failures = set(current['failed_tests'])
+        f.write("## Failure Differences Between Versions\n\n")
+        for i in range(len(results)-1):
+            base = results[i]
+            compare = results[i+1]
+            f.write(f"### {base['python_version']} → {compare['python_version']}\n\n")
             
-            f.write(f"### {base['python_version']} → {current['python_version']}\n\n")
+            # Create sets of test failures with their full error messages
+            base_failures = {(test['name'], test['error']) for test in base['failed_tests']}
+            compare_failures = {(test['name'], test['error']) for test in compare['failed_tests']}
             
-            if not base_failures and not current_failures:
-                f.write("*No differences in test failures*\n\n")
-                continue
-                
-            # New failures
-            new_failures = current_failures - base_failures
+            # Find new and fixed failures
+            new_failures = compare_failures - base_failures
+            fixed_failures = base_failures - compare_failures
+            
             if new_failures:
-                f.write("New failures:\n")
-                for failure in sorted(new_failures):
-                    f.write(f"- {failure}\n")
+                f.write(f"New failures in {compare['python_version']}:\n")
+                for name, error in sorted(new_failures):
+                    f.write(f"- {name}\n  {error}\n")
+                f.write("\n")
             
-            # Fixed failures
-            fixed_failures = base_failures - current_failures
             if fixed_failures:
-                f.write("\nFixed in new version:\n")
-                for failure in sorted(fixed_failures):
-                    f.write(f"- {failure}\n")
+                f.write(f"Fixed in {compare['python_version']} (failed in {base['python_version']}):\n")
+                for name, error in sorted(fixed_failures):
+                    f.write(f"- {name}\n  {error}\n")
+                f.write("\n")
             
-            f.write("\n")
+            if not new_failures and not fixed_failures:
+                f.write("*No differences in test failures*\n\n")
     
-    print(f"\nTest comparison report saved to: {report_file}")
     return report_file
 
 def compare_results(file1, file2):
@@ -141,63 +160,92 @@ def compare_results(file1, file2):
     subprocess.run(cmd)
 
 def run_python_tests(python_path, output_dir):
-    """Run Python test suite and save results"""
+    """Run Python test suite with specified Python version."""
     cmd = [
         python_path, 
-        "-m", "test",
-        "test_int",
-        "test_float", 
-        "test_bool",
+        "-m", 
+        "test",
         "test_asyncio",
         "test_json",
         "test_struct",
         "test_ctypes",
         "test_multiprocessing",
-        "-j8"   # Reduced parallelism
+        "-v",
+        "-j8",
         "--timeout=300"
     ]
     
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        print(f"Running tests with {python_path}...")
+        result = subprocess.run(
+            cmd, 
+            capture_output=True, 
+            text=True,
+            check=False
+        )
+        
+        # Add diagnostic output
+        print(f"Return code: {result.returncode}")
+        print("First 500 chars of stdout:", result.stdout[:500])
+        print("First 500 chars of stderr:", result.stderr[:500])
+        
+        if result.returncode == 0:
+            print("Tests completed successfully")
+        else:
+            print("Tests completed with failures")
+            
         return parse_test_results(result)
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         print(f"Error running tests: {e}")
-        print(f"Output: {e.output}")
         return None
 
 def parse_test_results(result):
-    """Parse the test results from subprocess output."""
-    # Get Python version from the command used to run the test
-    python_path = result.args[0]
-    python_version = subprocess.check_output([python_path, "-V"]).decode().split()[1]
+    """Parse test results from subprocess output."""
+    version = re.search(r'CPython ([\d.]+)', result.stdout)
+    if not version:
+        return None
+        
+    version = version.group(1)
     
-    if result.returncode != 0:
-        print("Tests failed to run successfully.")
-        return {
-            "python_version": python_version,
-            "tests_run": 0,
-            "tests_failed": 2,  # Indicating failure state
-            "failed_tests": []
-        }
+    # Initialize counters
+    tests_run = 0
+    tests_failed = 0
+    failed_tests = []
     
-    parsed_results = {
-        "python_version": python_version,
-        "tests_run": 0,
-        "tests_failed": 0,
-        "failed_tests": []
+    # Parse test failures
+    for line in result.stdout.split('\n') + result.stderr.split('\n'):
+        if 'test_' in line and 'failed' in line.lower():
+            tests_failed += 1
+            test_name = re.search(r'test_\w+', line)
+            if test_name:
+                failed_tests.append({
+                    'name': test_name.group(),
+                    'error': line.strip()
+                })
+    
+    # Count total tests from the "Run X tests" line
+    run_tests_match = re.search(r'Run (\d+) tests?', result.stdout)
+    if run_tests_match:
+        tests_run = int(run_tests_match.group(1))
+    else:
+        # Fallback: count the number of test_* mentions that aren't failures
+        tests_run = len(re.findall(r'test_\w+(?!.*failed)', result.stdout))
+    
+    return {
+        'python_version': version,
+        'tests_run': tests_run,
+        'tests_passed': max(0, tests_run - tests_failed),  # Ensure non-negative
+        'tests_failed': tests_failed,
+        'failed_tests': failed_tests,
+        'return_code': result.returncode
     }
-    
-    for line in result.stdout.splitlines():
-        if "Ran" in line and "tests" in line:
-            try:
-                parsed_results["tests_run"] = int(line.split()[1])
-            except (ValueError, IndexError):
-                continue
-        elif "FAILED" in line:
-            parsed_results["tests_failed"] += 1
-            parsed_results["failed_tests"].append(line.strip())
-    
-    return parsed_results
+
+def ensure_pyperf(python_path):
+    try:
+        subprocess.run([python_path, "-m", "pyperf", "--version"], check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        print(f"Installing pyperf for {python_path}")
+        subprocess.run([python_path, "-m", "pip", "install", "--user", "pyperf"], check=True)
 
 def run_focused_comparison():
     """Run both test suite and performance comparisons for multiple Python versions"""
@@ -214,9 +262,18 @@ def run_focused_comparison():
     print("\n=== Running Python Test Suite Comparisons ===")
     test_results = []
     for python_path in python_versions:
-        result_file = run_python_tests(python_path, output_dir)
-        if result_file:
+        result = run_python_tests(python_path, output_dir)
+        if result:
+            # Save result to file
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            result_file = output_dir / f"test_results_{result['python_version']}_{timestamp}.json"
+            with open(result_file, 'w') as f:
+                json.dump(result, f)
             test_results.append(result_file)
+    
+    print(f"Number of test results: {len(test_results)}")
+    for result in test_results:
+        print(f"Test result file: {result}")
     
     # 2. Run Performance comparisons
     print("\n=== Running Performance Comparisons ===")
@@ -232,27 +289,21 @@ def run_focused_comparison():
         print("\n=== Test Suite Comparison Results ===")
         test_report = generate_test_comparison_report(test_results, output_dir)
         print(f"Test comparison report: {test_report}")
-    
+
     if len(perf_results) >= 2:
         print("\n=== Performance Comparison Results ===")
         # Do pairwise comparisons
+        ensure_pyperf(python_versions[0])
         for i in range(len(perf_results)-1):
             print(f"\nComparing {Path(perf_results[i]).name} vs {Path(perf_results[i+1]).name}:")
-            # Generate table comparison
+            # Generate table comparison using python -m to ensure we use the correct pyperf
             subprocess.run([
-                "python3.9", "-m", "pyperf", "compare_to", 
-                "--table", 
-                str(perf_results[i]), 
-                str(perf_results[i+1])
-            ])
-        
-        # Generate stats for each result
-        for result in perf_results:
-            print(f"\nStats for {result.name}:")
-            subprocess.run([
-                "python3.9", "-m", "pyperf", "stats",
-                str(result)
-            ])
+                python_versions[0],  # Use the first Python executable
+                "-m", "pyperf", "compare_to",
+                "--table", str(perf_results[i]), str(perf_results[i+1])
+            ], check=True)
+
+    print("\nComparison complete. Results are in the 'comparison_results' directory.")
 
 if __name__ == "__main__":
     run_focused_comparison()
