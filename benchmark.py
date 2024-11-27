@@ -305,6 +305,36 @@ def ensure_pyperf(python_path):
         print(f"Installing pyperf for {python_path}")
         subprocess.run([python_path, "-m", "pip", "install", "--user", "pyperf"], check=True)
 
+def create_venv_if_needed(python_path):
+    """Create and return path to a virtual environment for given Python"""
+    venv_base = Path("venvs")
+    venv_base.mkdir(exist_ok=True)
+    python_name = os.path.basename(python_path)
+    venv_path = venv_base / f"{python_name}-benchmark"
+    
+    if not venv_path.exists():
+        print(f"Creating virtual environment for {python_name}")
+        subprocess.run(
+            [python_path, "-m", "venv", str(venv_path)],
+            check=True
+        )
+    
+    return venv_path
+
+def install_in_venv(venv_path, packages):
+    """Install packages in the specified virtual environment"""
+    pip_path = venv_path / "bin" / "pip"
+    for package in packages:
+        print(f"Installing {package} in {venv_path.name}")
+        subprocess.run(
+            [str(pip_path), "install", "-q", package],
+            check=True
+        )
+
+def get_venv_python(venv_path):
+    """Get path to Python executable in virtual environment"""
+    return str(venv_path / "bin" / "python")
+
 def run_focused_comparison():
     """Run both test suite and performance comparisons for multiple Python versions"""
     python_versions = [
@@ -318,26 +348,30 @@ def run_focused_comparison():
     output_dir = Path("comparison_results")
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # 1. Run Python test suite comparisons
-    print("\n=== Running Python Test Suite Comparisons ===")
+    # Create comparison venv first (using first Python version)
+    comparison_venv = create_venv_if_needed(python_versions[0])
+    install_in_venv(comparison_venv, ["pyperf"])  # Only install pyperf in comparison venv
+    
+    # Run tests and benchmarks for each Python version
     test_results = []
-    for python_path in python_versions:
-        result_file = run_tests(python_path, output_dir)
-        if result_file:
-            test_results.append(result_file)
-    
-    print(f"Number of test results: {len(test_results)}")
-    for result in test_results:
-        print(f"Test result file: {result}")
-    
-    # 2. Run Performance comparisons
-    print("\n=== Running Performance Comparisons ===")
     perf_results = []
+    
     for python_path in python_versions:
-        ensure_requirements(python_path)
-        result_file = run_benchmark(python_path, output_dir)
-        if result_file:
-            perf_results.append(result_file)
+        # Create venv for this Python version
+        benchmark_venv = create_venv_if_needed(python_path)
+        install_in_venv(benchmark_venv, ["pyperformance"])  # Only install pyperformance
+        
+        venv_python = get_venv_python(benchmark_venv)
+        
+        # Run tests and benchmarks using venv Python
+        print(f"\n=== Running tests and benchmarks for {python_path} ===")
+        test_result = run_tests(venv_python, output_dir)
+        if test_result:
+            test_results.append(test_result)
+        
+        perf_result = run_benchmark(venv_python, output_dir)
+        if perf_result:
+            perf_results.append(perf_result)
     
     # Generate reports
     if len(test_results) >= 2:
@@ -347,13 +381,13 @@ def run_focused_comparison():
 
     if len(perf_results) >= 2:
         print("\n=== Performance Comparison Results ===")
-        # Do pairwise comparisons
-        ensure_pyperf(python_versions[0])
+        comparison_python = get_venv_python(comparison_venv)
+        
+        # Do pairwise comparisons using the comparison venv
         for i in range(len(perf_results)-1):
             print(f"\nComparing {Path(perf_results[i]).name} vs {Path(perf_results[i+1]).name}:")
-            # Generate table comparison using python -m to ensure we use the correct pyperf
             subprocess.run([
-                python_versions[0],  # Use the first Python executable
+                comparison_python,  # Use the venv Python with pyperf installed
                 "-m", "pyperf", "compare_to",
                 "--table", str(perf_results[i]), str(perf_results[i+1])
             ], check=True)
