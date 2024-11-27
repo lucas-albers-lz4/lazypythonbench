@@ -33,6 +33,18 @@ def ensure_requirements(python_path):
                 env=env
             )
 
+def create_virtualenv(python_path, venv_path):
+    """Create a virtual environment quietly unless there's an error"""
+    try:
+        subprocess.run(
+            [python_path, "-m", "venv", venv_path],
+            stdout=subprocess.DEVNULL,  # Suppress standard output
+            stderr=subprocess.PIPE,     # Capture error output
+            check=True
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Error creating virtualenv: {e.stderr.decode()}")
+
 def run_benchmark(python_path, output_dir):
     """Run minimal benchmarks for testing report generation"""
     output_dir = Path(output_dir)
@@ -42,22 +54,26 @@ def run_benchmark(python_path, output_dir):
     python_version = subprocess.check_output([python_path, "-V"]).decode().split()[1]
     output_file = output_dir / f"python{python_version}_{timestamp}.json"
     
-    # Set environment variables to suppress pip warnings and virtualenv output
+    # Set environment variables to suppress pip and virtualenv output
     env = os.environ.copy()
     env['PIP_DISABLE_PIP_VERSION_CHECK'] = '1'
     env['PYTHONWARNINGS'] = 'ignore:DEPRECATION'
     env['VIRTUALENV_NO_PERIODIC_UPDATE'] = '1'
-    env['PIP_QUIET'] = '1'  # Added to reduce pip output
-    env['VIRTUALENV_QUIET'] = '1'  # Added to reduce virtualenv output
+    env['PIP_QUIET'] = '1'
+    env['VIRTUALENV_QUIET'] = '1'
+    env['PIP_NO_INPUT'] = '1'
+    env['PIP_PROGRESS_BAR'] = 'off'
+    env['PIP_NO_COLOR'] = '1'
+    env['PYTHONWARNINGS'] = 'ignore::DeprecationWarning'
     
     # Minimal set of fast benchmarks with reduced iterations
     cmd = [
         python_path, "-m", "pyperformance", "run",
         "--python", python_path,
-        "--benchmarks", "json_dumps,richards",  # Just two fast benchmarks
-        "--fast",  # Reduce number of iterations
+        "--benchmarks", "json_dumps,richards",
+        "--fast",
         "--output", str(output_file),
-        "--inherit-environ", "PIP_DISABLE_PIP_VERSION_CHECK,PYTHONWARNINGS,VIRTUALENV_NO_PERIODIC_UPDATE,PIP_QUIET,VIRTUALENV_QUIET"
+        "--inherit-environ", "PIP_DISABLE_PIP_VERSION_CHECK,PYTHONWARNINGS,VIRTUALENV_NO_PERIODIC_UPDATE,PIP_QUIET,VIRTUALENV_QUIET,PIP_NO_INPUT,PIP_PROGRESS_BAR,PIP_NO_COLOR"
     ]
     
     try:
@@ -159,86 +175,128 @@ def compare_results(file1, file2):
     cmd = ["python3.9", "-m", "pyperf", "compare", str(file1), str(file2)]
     subprocess.run(cmd)
 
-def run_python_tests(python_path, output_dir):
-    """Run Python test suite with specified Python version."""
-    cmd = [
-        python_path, 
-        "-m", 
-        "test",
-        "test_asyncio",
-        "test_json",
-        "test_struct",
-        "test_ctypes",
-        "test_multiprocessing",
-        "-v",
-        "-j8",
-        "--timeout=300"
+def parse_test_output(output, python_version):
+    """
+    Parse Python test suite output and structure the results
+    
+    Args:
+        output (str): Raw output from test suite execution
+        python_version (str): Version of Python being tested (e.g. "3.9.20")
+        
+    Returns:
+        dict: Structured test results containing:
+            - python_version: Version of Python tested
+            - tests_run: Total number of tests executed
+            - tests_failed: Number of failed/skipped tests
+            - failed_tests: List of dicts with test details (name, error)
+    """
+    # Initialize results structure with default values
+    results = {
+        'python_version': python_version,
+        'tests_run': 0,
+        'tests_failed': 0,
+        'failed_tests': []
+    }
+    
+    # Process output line by line looking for test results
+    lines = output.split('\n')
+    for line in lines:
+        # Look for lines containing test results (ok, FAIL, ERROR, or skipped)
+        if 'test' in line and ('ok' in line or 'FAIL' in line or 'ERROR' in line or 'skipped' in line):
+            results['tests_run'] += 1
+            
+            # Handle test failures and errors
+            if 'FAIL' in line or 'ERROR' in line:
+                results['tests_failed'] += 1
+                results['failed_tests'].append({
+                    'name': line.split(':')[0].strip() if ':' in line else line.strip(),
+                    'error': line.strip()
+                })
+            
+            # Handle skipped tests (counted as failures but marked differently)
+            elif 'skipped' in line:
+                results['tests_failed'] += 1
+                results['failed_tests'].append({
+                    'name': line.split(':')[0].strip() if ':' in line else line.strip(),
+                    'error': f"{line.strip()} (skipped)"
+                })
+    
+    # Fallback parsing if no standard test output format is found
+    if results['tests_run'] == 0 and output.strip():
+        # Use regex to find all test names in output
+        test_pattern = r'test_[a-zA-Z0-9_]+'
+        unique_tests = set(re.findall(test_pattern, output))
+        results['tests_run'] = len(unique_tests)
+        
+        # Check each test for failure indicators
+        for test in unique_tests:
+            if f"{test} ... FAIL" in output or f"{test} ... ERROR" in output:
+                results['tests_failed'] += 1
+                results['failed_tests'].append({
+                    'name': test,
+                    'error': f"Test failed or had errors"
+                })
+    
+    return results
+
+def run_tests(python_path, output_dir):
+    """
+    Execute Python test suite and capture results
+    
+    Args:
+        python_path (str): Path to Python executable
+        output_dir (Path/str): Directory to store test results
+        
+    Returns:
+        Path/None: Path to results JSON file if successful, None if failed
+        
+    Notes:
+        - Creates timestamped JSON files for each test run
+        - Includes basic test suite (int, float, bool, etc.)
+        - Has 10-minute timeout for test execution
+        - Captures both stdout and stderr
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Get Python version and setup output file path
+    python_version = subprocess.check_output([python_path, "-V"]).decode().split()[1]
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_file = output_dir / f"test_results_{python_version}_{timestamp}.json"
+    
+    print(f"Running tests with {python_path}...")
+    
+    # Core test suite - fundamental Python functionality tests
+    tests = [
+        "test_int", "test_float", "test_bool", 
+        "test_asyncio", "test_json", "test_struct", 
+        "test_ctypes", "test_multiprocessing"
     ]
     
     try:
-        print(f"Running tests with {python_path}...")
+        # Execute test suite with verbose output
+        cmd = [python_path, "-m", "test", "-v","-j0"] + tests
         result = subprocess.run(
-            cmd, 
-            capture_output=True, 
+            cmd,
+            capture_output=True,
             text=True,
-            check=False
+            timeout=600  # 5 minute timeout
         )
         
-        # Add diagnostic output
+        # Log execution results
         print(f"Return code: {result.returncode}")
-        print("First 500 chars of stdout:", result.stdout[:500])
-        print("First 500 chars of stderr:", result.stderr[:500])
+        print(f"First 500 chars of stdout: {result.stdout[:500]}")
+        print(f"First 500 chars of stderr: {result.stderr[:500]}")
         
-        if result.returncode == 0:
-            print("Tests completed successfully")
-        else:
-            print("Tests completed with failures")
-            
-        return parse_test_results(result)
+        # Parse results and save to JSON
+        test_results = parse_test_output(result.stdout, python_version)
+        with open(output_file, 'w') as f:
+            json.dump(test_results, f, indent=2)
+        
+        return output_file
     except Exception as e:
         print(f"Error running tests: {e}")
         return None
-
-def parse_test_results(result):
-    """Parse test results from subprocess output."""
-    version = re.search(r'CPython ([\d.]+)', result.stdout)
-    if not version:
-        return None
-        
-    version = version.group(1)
-    
-    # Initialize counters
-    tests_run = 0
-    tests_failed = 0
-    failed_tests = []
-    
-    # Parse test failures
-    for line in result.stdout.split('\n') + result.stderr.split('\n'):
-        if 'test_' in line and 'failed' in line.lower():
-            tests_failed += 1
-            test_name = re.search(r'test_\w+', line)
-            if test_name:
-                failed_tests.append({
-                    'name': test_name.group(),
-                    'error': line.strip()
-                })
-    
-    # Count total tests from the "Run X tests" line
-    run_tests_match = re.search(r'Run (\d+) tests?', result.stdout)
-    if run_tests_match:
-        tests_run = int(run_tests_match.group(1))
-    else:
-        # Fallback: count the number of test_* mentions that aren't failures
-        tests_run = len(re.findall(r'test_\w+(?!.*failed)', result.stdout))
-    
-    return {
-        'python_version': version,
-        'tests_run': tests_run,
-        'tests_passed': max(0, tests_run - tests_failed),  # Ensure non-negative
-        'tests_failed': tests_failed,
-        'failed_tests': failed_tests,
-        'return_code': result.returncode
-    }
 
 def ensure_pyperf(python_path):
     try:
@@ -253,6 +311,8 @@ def run_focused_comparison():
         "/opt/homebrew/bin/python3.9",
         "/opt/homebrew/bin/python3.10",
         "/opt/homebrew/bin/python3.11",
+        "/opt/homebrew/bin/python3.12",
+        "/opt/homebrew/bin/python3.13",
     ]
     
     output_dir = Path("comparison_results")
@@ -262,13 +322,8 @@ def run_focused_comparison():
     print("\n=== Running Python Test Suite Comparisons ===")
     test_results = []
     for python_path in python_versions:
-        result = run_python_tests(python_path, output_dir)
-        if result:
-            # Save result to file
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            result_file = output_dir / f"test_results_{result['python_version']}_{timestamp}.json"
-            with open(result_file, 'w') as f:
-                json.dump(result, f)
+        result_file = run_tests(python_path, output_dir)
+        if result_file:
             test_results.append(result_file)
     
     print(f"Number of test results: {len(test_results)}")
