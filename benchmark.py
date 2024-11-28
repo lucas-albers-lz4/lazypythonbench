@@ -9,6 +9,14 @@ from tabulate import tabulate
 import re
 import argparse
 
+# Constants
+BREWPATH = "/opt/homebrew/bin/"
+PYTHON_BASE_VERSIONS = [
+    "3.9",
+    "3.12",
+    ]
+python_versions = [f"{BREWPATH}python{version}" for version in PYTHON_BASE_VERSIONS]
+
 def ensure_requirements(python_path):
     """Ensure all required packages are installed for current user"""
     env = os.environ.copy()
@@ -277,7 +285,7 @@ def run_tests(python_path, output_dir):
     print(f"Running tests with {python_path}...")
     
     # Core test suite - fundamental Python functionality tests
-    tests = [
+    quick_tests = [
         "test_int", "test_float", "test_bool", 
         "test_asyncio", "test_json", "test_struct", 
         "test_ctypes", "test_multiprocessing"
@@ -285,7 +293,9 @@ def run_tests(python_path, output_dir):
     
     try:
         # Execute test suite with verbose output
-        cmd = [python_path, "-m", "test", "-v","-j0"] + tests
+        #so -u none is the default but seems to act differnt if you actually call it
+        #-u curses,network might have ssl tests that fail 
+        cmd = [python_path, "-m", "test", "-v","-j0" ]
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -357,14 +367,6 @@ def parse_arguments():
 def run_focused_comparison():
     """Run both test suite and performance comparisons for multiple Python versions"""
     args = parse_arguments()
-    
-    python_versions = [
-        "/opt/homebrew/bin/python3.9",
-        "/opt/homebrew/bin/python3.10",
-        "/opt/homebrew/bin/python3.11",
-        "/opt/homebrew/bin/python3.12",
-        "/opt/homebrew/bin/python3.13",
-    ]
     
     output_dir = Path("comparison_results")
     output_dir.mkdir(parents=True, exist_ok=True)
