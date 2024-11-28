@@ -8,6 +8,8 @@ import os
 from tabulate import tabulate
 import re
 import argparse
+import platform
+import psutil
 
 # Constants
 BREWPATH = "/opt/homebrew/bin/"
@@ -54,8 +56,97 @@ def create_virtualenv(python_path, venv_path):
     except subprocess.CalledProcessError as e:
         print(f"Error creating virtualenv: {e.stderr.decode()}")
 
-def run_benchmark(python_path, output_dir):
-    """Run minimal benchmarks for testing report generation"""
+def check_system_settings_macos():
+    """
+    Check system settings that could impact benchmark accuracy on macOS.
+    Returns (bool, list): Tuple of (is_suitable, list_of_issues)
+    """
+    issues = []
+    
+    try:
+        # Check power source
+        power_source = subprocess.check_output(['pmset', '-g', 'ps']).decode()
+        if "Battery Power" in power_source:
+            issues.append("Running on battery power (may affect performance)")
+        else:
+            print("✓ Power source: AC power")
+            
+        # Memory check using psutil
+        memory = psutil.virtual_memory()
+        available_memory_gb = memory.available / (1024 * 1024 * 1024)
+        total_memory_gb = memory.total / (1024 * 1024 * 1024)
+        min_required_gb = total_memory_gb * 0.25
+        
+        if available_memory_gb < min_required_gb:
+            issues.append(f"Low available memory: {available_memory_gb:.1f}GB available (need at least {min_required_gb:.1f}GB)")
+        else:
+            print(f"✓ Memory: {available_memory_gb:.1f}GB available")
+            
+        # Check Spotlight indexing - look for active mdworker CPU usage
+        ps_output = subprocess.check_output(['ps', '-eo', 'pcpu,comm'], text=True).splitlines()
+        spotlight_processes = [line for line in ps_output if 'mdworker' in line]
+        active_indexing = any(float(proc.split()[0]) > 0.5 for proc in spotlight_processes)
+        
+        if active_indexing:
+            issues.append("Spotlight indexing is active (mdworker using CPU)")
+        else:
+            print("✓ Spotlight: No active indexing")
+            
+        # Check Time Machine
+        if 'com.apple.backupd' in subprocess.check_output(['ps', 'aux']).decode():
+            issues.append("Time Machine backup in progress")
+        else:
+            print("✓ Time Machine: No backup in progress")
+            
+    except subprocess.CalledProcessError as e:
+        issues.append(f"Unable to check system settings: {e}")
+    except Exception as e:
+        issues.append(f"Error checking system settings: {e}")
+        
+    return len(issues) == 0, issues
+
+def check_system_settings():
+    """Platform-aware system settings check"""
+    if platform.system() == 'Darwin':  # macOS
+        return check_system_settings_macos()
+    else:
+        print("System checks are currently only implemented for macOS")
+        return True, []  # Allow benchmarks to proceed on other platforms
+
+def run_benchmark(python_path, output_dir, quick_mode=False):
+    """Run benchmarks for testing report generation
+    
+    Args:
+        python_path (str): Path to Python executable
+        output_dir (Path/str): Directory to store benchmark results
+        quick_mode (bool): If True, runs only pyflate benchmark
+        
+    Returns:
+        Path/None: Path to benchmark results file if successful, None if failed
+        
+    Notes:
+        - Checks system settings before running benchmarks
+        - Creates timestamped JSON file for results
+        - Runs all benchmarks (json_dumps,richards,pyflate) if quick_mode is False
+        - Runs only pyflate benchmark if quick_mode is True
+        - Uses quiet environment settings to reduce output noise
+    """
+    # First check system settings
+    print("\nChecking system settings for benchmark suitability...")
+    is_suitable, issues = check_system_settings()
+    
+    if not is_suitable:
+        print("\n⚠️  Warning: System settings may affect benchmark accuracy:")
+        for issue in issues:
+            print(f"  • {issue}")
+        
+        response = input("\nContinue with benchmarks anyway? (y/N): ").lower()
+        if response != 'y':
+            print("Benchmarks aborted.")
+            return None
+    
+    print("✓ System settings suitable for benchmarking")
+    
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -63,30 +154,45 @@ def run_benchmark(python_path, output_dir):
     python_version = subprocess.check_output([python_path, "-V"]).decode().split()[1]
     output_file = output_dir / f"python{python_version}_{timestamp}.json"
     
-    # Set environment variables to suppress pip and virtualenv output
-    env = os.environ.copy()
-    env['PIP_DISABLE_PIP_VERSION_CHECK'] = '1'
-    env['PYTHONWARNINGS'] = 'ignore:DEPRECATION'
-    env['VIRTUALENV_NO_PERIODIC_UPDATE'] = '1'
-    env['PIP_QUIET'] = '1'
-    env['VIRTUALENV_QUIET'] = '1'
-    env['PIP_NO_INPUT'] = '1'
-    env['PIP_PROGRESS_BAR'] = 'off'
-    env['PIP_NO_COLOR'] = '1'
-    env['PYTHONWARNINGS'] = 'ignore::DeprecationWarning'
+    # Common environment variables for suppressing output
+    QUIET_ENV = {
+        'PIP_DISABLE_PIP_VERSION_CHECK': '1',    # Prevents pip from checking for newer versions of itself
+        'PYTHONWARNINGS': 'ignore',              # Suppresses all Python warnings
+        'VIRTUALENV_NO_PERIODIC_UPDATE': '1',     # Prevents virtualenv from checking for updates
+        'PIP_QUIET': '1',                        # Reduces pip output to essential messages only
+        'VIRTUALENV_QUIET': '1',                 # Suppresses virtualenv creation messages
+        'PIP_NO_INPUT': '1',                     # Prevents pip from asking for user input
+        'PIP_PROGRESS_BAR': 'off',               # Disables progress bar in pip installations
+        'PIP_NO_COLOR': '1',                     # Disables colored output in pip
+        'PYPERFORMANCE_QUIET': '1',              # Suppresses pyperformance benchmark output
+        'VIRTUALENV_VERBOSE': '0',               # Sets virtualenv verbosity to minimum
+        'PIP_VERBOSE': '0',                      # Sets pip verbosity to minimum
+        'PYPERFORMANCE_SYSTEM_TUNE': '0',        # Disables system tuning during benchmarks
+        'PIP_LOG_LEVEL': 'ERROR',                # Sets pip logging to show only errors
+        'PYTHONUNBUFFERED': '1',                 # Disables Python output buffering
+        'PYPERFORMANCE_VERBOSE': '0',            # Reduces pyperformance verbosity
+        'PIP_NO_CACHE_DIR': 'off',               # Controls pip's cache behavior (allows caching)
+        'VIRTUALENV_NO_DOWNLOAD': '1',           # Prevents virtualenv from downloading updates
+        'VIRTUALENV_CLEAR': '1'                  # Clears existing virtualenv on creation
+    }
     
-    # Minimal set of meaningful benchmarks
+    # Set environment variables
+    env = os.environ.copy()
+    env.update(QUIET_ENV)
+    
+    # Set benchmarks based on mode
+    benchmarks = "pyflate" if quick_mode else "json_dumps,richards,pyflate"
+    
     cmd = [
         python_path, "-m", "pyperformance", "run",
         "--python", python_path,
-        "--benchmarks", "json_dumps,richards,pyflate",
-        "--fast",
+        "--benchmarks", benchmarks,
         "--output", str(output_file),
-        "--inherit-environ", "PIP_DISABLE_PIP_VERSION_CHECK,PYTHONWARNINGS,VIRTUALENV_NO_PERIODIC_UPDATE,PIP_QUIET,VIRTUALENV_QUIET,PIP_NO_INPUT,PIP_PROGRESS_BAR,PIP_NO_COLOR"
+        "--inherit-environ", ",".join(QUIET_ENV.keys())
     ]
     
     try:
-        print(f"\nRunning minimal benchmarks with {python_path}...")
+        print(f"\nRunning {'quick' if quick_mode else 'standard'} benchmarks with {python_path}...")
         subprocess.run(cmd, env=env, check=True)
         print(f"Benchmark results saved to: {output_file}")
         return output_file
@@ -257,13 +363,14 @@ def parse_test_output(output, python_version):
     
     return results
 
-def run_tests(python_path, output_dir):
+def run_tests(python_path, output_dir, quick_mode=False):
     """
     Execute Python test suite and capture results
     
     Args:
         python_path (str): Path to Python executable
         output_dir (Path/str): Directory to store test results
+        quick_mode (bool): If True, runs only core functionality tests
         
     Returns:
         Path/None: Path to results JSON file if successful, None if failed
@@ -272,14 +379,14 @@ def run_tests(python_path, output_dir):
         - Creates timestamped JSON and XML files for each test run
         - JSON used for report generation and comparisons
         - XML available for detailed test analysis
-        - Includes full test suite with parallel execution (-j0)
+        - Uses parallel execution (-j0) for both quick and full modes
+        - Runs core functionality tests only if quick_mode is True
         - Has 10-minute timeout for test execution
         - Captures both stdout and stderr
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Get Python version and setup output file paths
     python_version = subprocess.check_output([python_path, "-V"]).decode().split()[1]
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_file = output_dir / f"test_results_{python_version}_{timestamp}.json"
@@ -287,17 +394,29 @@ def run_tests(python_path, output_dir):
     
     print(f"Running tests with {python_path}...")
     
-    # Core test suite - fundamental Python functionality tests
-    #these are just in here to remind me when i want to run a quick test
-    quick_tests = [
-        "test_int", "test_float", "test_bool", 
-        "test_asyncio", "test_json", "test_struct", 
-        "test_ctypes", "test_multiprocessing"
-    ]
-    
     try:
-        # Execute test suite with verbose output and XML output
-        cmd = [python_path, "-m", "test", "-v", "-j0", f"--junit-xml={xml_file}"]
+        # Base command with common options
+        cmd = [
+            python_path, 
+            "-m", 
+            "test",
+            "-j0",                        # parallel execution
+            f"--junit-xml={xml_file}"    # XML output for reports
+        ]
+        
+        if quick_mode:
+            # Directly specify test names as arguments
+            quick_tests = [
+                "test_int",
+                "test_float",
+                "test_bool", 
+                "test_asyncio",
+                "test_json",
+                "test_struct", 
+                "test_ctypes"
+            ]
+            cmd.extend(quick_tests)
+            
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -310,7 +429,7 @@ def run_tests(python_path, output_dir):
         print(f"First 500 chars of stdout: {result.stdout[:500]}")
         print(f"First 500 chars of stderr: {result.stderr[:500]}")
         
-        # Parse results and save to JSON (used for report generation)
+        # Parse results and save to JSON
         test_results = parse_test_output(result.stdout, python_version)
         with open(output_file, 'w') as f:
             json.dump(test_results, f, indent=2)
@@ -366,14 +485,46 @@ def parse_arguments():
                       help='Skip running unit tests and test comparison')
     parser.add_argument('--disable-benchmark', action='store_true',
                       help='Skip running performance benchmarks')
+    parser.add_argument('--disable-system-check', action='store_true',
+                      help='Skip system suitability check before benchmarking')
+    parser.add_argument('--quick', action='store_true',
+                      help='Run minimal set of tests and benchmarks')
     return parser.parse_args()
 
 def run_focused_comparison():
-    """Run both test suite and performance comparisons for multiple Python versions"""
-    args = parse_arguments()
+    """Run both test suite and performance comparisons for multiple Python versions
     
+    This function coordinates the execution of tests and benchmarks across different
+    Python versions. It handles:
+        - Command line argument parsing
+        - System suitability checks for benchmarking
+        - Virtual environment creation and management
+        - Test execution (full or quick mode)
+        - Benchmark execution (full or quick mode)
+        - Result collection and report generation
+    
+    Command line options:
+        --disable-test: Skip unit tests and test comparison
+        --disable-benchmark: Skip performance benchmarks
+        --disable-system-check: Skip system suitability check
+        --quick: Run minimal set of tests and benchmarks
+    """
+    args = parse_arguments()
     output_dir = Path("comparison_results")
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Only check system settings once at start if we're running benchmarks and checks aren't disabled
+    if not args.disable_benchmark and not args.disable_system_check:
+        print("\nChecking system settings for benchmark suitability...")
+        is_suitable, issues = check_system_settings_macos()
+        if not is_suitable:
+            print("\n❌ Benchmark aborted. System settings are not suitable:")
+            for issue in issues:
+                print(f"  • {issue}")
+            print("\nPlease resolve these issues and try again.")
+            print("(To bypass this check, use --disable-system-check)")
+            return
+        print("\n✓ System ready for benchmarking\n")
     
     test_results = []
     perf_results = []
@@ -402,13 +553,13 @@ def run_focused_comparison():
         
         # Run tests if enabled
         if not args.disable_test:
-            test_result = run_tests(venv_python, output_dir)
+            test_result = run_tests(venv_python, output_dir, quick_mode=args.quick)
             if test_result:
                 test_results.append(test_result)
         
         # Run benchmarks if enabled
         if not args.disable_benchmark:
-            perf_result = run_benchmark(venv_python, output_dir)
+            perf_result = run_benchmark(venv_python, output_dir, quick_mode=args.quick)
             if perf_result:
                 perf_results.append(perf_result)
     
