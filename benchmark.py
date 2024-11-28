@@ -269,18 +269,21 @@ def run_tests(python_path, output_dir):
         Path/None: Path to results JSON file if successful, None if failed
         
     Notes:
-        - Creates timestamped JSON files for each test run
-        - Includes basic test suite (int, float, bool, etc.)
+        - Creates timestamped JSON and XML files for each test run
+        - JSON used for report generation and comparisons
+        - XML available for detailed test analysis
+        - Includes full test suite with parallel execution (-j0)
         - Has 10-minute timeout for test execution
         - Captures both stdout and stderr
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Get Python version and setup output file path
+    # Get Python version and setup output file paths
     python_version = subprocess.check_output([python_path, "-V"]).decode().split()[1]
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_file = output_dir / f"test_results_{python_version}_{timestamp}.json"
+    xml_file = output_dir / f"test_results_{python_version}_{timestamp}.xml"
     
     print(f"Running tests with {python_path}...")
     
@@ -292,15 +295,13 @@ def run_tests(python_path, output_dir):
     ]
     
     try:
-        # Execute test suite with verbose output
-        #so -u none is the default but seems to act differnt if you actually call it
-        #-u curses,network might have ssl tests that fail 
-        cmd = [python_path, "-m", "test", "-v","-j0" ]
+        # Execute test suite with verbose output and XML output
+        cmd = [python_path, "-m", "test", "-v", "-j0", f"--junit-xml={xml_file}"]
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=600  # 5 minute timeout
+            timeout=600  # 10 minute timeout
         )
         
         # Log execution results
@@ -308,10 +309,12 @@ def run_tests(python_path, output_dir):
         print(f"First 500 chars of stdout: {result.stdout[:500]}")
         print(f"First 500 chars of stderr: {result.stderr[:500]}")
         
-        # Parse results and save to JSON
+        # Parse results and save to JSON (used for report generation)
         test_results = parse_test_output(result.stdout, python_version)
         with open(output_file, 'w') as f:
             json.dump(test_results, f, indent=2)
+        
+        print(f"Test results saved to:\n  JSON: {output_file}\n  XML: {xml_file}")
         
         return output_file
     except Exception as e:
