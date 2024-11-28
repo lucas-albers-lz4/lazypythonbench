@@ -75,11 +75,11 @@ def run_benchmark(python_path, output_dir):
     env['PIP_NO_COLOR'] = '1'
     env['PYTHONWARNINGS'] = 'ignore::DeprecationWarning'
     
-    # Minimal set of fast benchmarks with reduced iterations
+    # Minimal set of meaningful benchmarks
     cmd = [
         python_path, "-m", "pyperformance", "run",
         "--python", python_path,
-        "--benchmarks", "json_dumps,richards",
+        "--benchmarks", "json_dumps,richards,pyflate",
         "--fast",
         "--output", str(output_file),
         "--inherit-environ", "PIP_DISABLE_PIP_VERSION_CHECK,PYTHONWARNINGS,VIRTUALENV_NO_PERIODIC_UPDATE,PIP_QUIET,VIRTUALENV_QUIET,PIP_NO_INPUT,PIP_PROGRESS_BAR,PIP_NO_COLOR"
@@ -423,6 +423,7 @@ def run_focused_comparison():
         print("\n=== Performance Comparison Results ===")
         comparison_python = get_venv_python(comparison_venv)
         
+        # Keep existing comparison functionality
         for i in range(len(perf_results)-1):
             print(f"\nComparing {Path(perf_results[i]).name} vs {Path(perf_results[i+1]).name}:")
             subprocess.run([
@@ -430,6 +431,17 @@ def run_focused_comparison():
                 "-m", "pyperf", "compare_to",
                 "--table", str(perf_results[i]), str(perf_results[i+1])
             ], check=True)
+        
+        # Add markdown report generation
+        report_file = output_dir / f"benchmark_comparison_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.md"
+        with open(report_file, 'w') as f:
+            f.write("# Python Performance Comparison\n\n```\n")
+            subprocess.run([
+                comparison_python, "-m", "pyperf", "compare_to",
+                "--table", *[str(result) for result in perf_results]
+            ], stdout=f, check=True)
+            f.write("```\n")
+        print(f"\nMarkdown comparison report generated: {report_file}")
 
     print("\nComparison complete. Results are in the 'comparison_results' directory.")
 
