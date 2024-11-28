@@ -288,6 +288,7 @@ def run_tests(python_path, output_dir):
     print(f"Running tests with {python_path}...")
     
     # Core test suite - fundamental Python functionality tests
+    #these are just in here to remind me when i want to run a quick test
     quick_tests = [
         "test_int", "test_float", "test_bool", 
         "test_asyncio", "test_json", "test_struct", 
