@@ -10,12 +10,16 @@ import re
 import argparse
 import platform
 import psutil
+import xml.etree.ElementTree as ET
 
 # Constants
 BREWPATH = "/opt/homebrew/bin/"
 PYTHON_BASE_VERSIONS = [
     "3.9",
+    "3.10",
+    "3.11",
     "3.12",
+    "3.13",
     ]
 python_versions = [f"{BREWPATH}python{version}" for version in PYTHON_BASE_VERSIONS]
 
@@ -202,16 +206,23 @@ def run_benchmark(python_path, output_dir, quick_mode=False):
 
 def generate_test_comparison_report(files, output_dir):
     """Generate a focused comparison report of test failures"""
+    print("\n=== Debug: Test Files Content ===")
+    print(f"Number of files to process: {len(files)}")
+    
     report_file = output_dir / f"test_comparison_report_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.md"
+    print(f"\nGenerating report at: {report_file}")
     
     results = []
     for file in files:
+        print(f"Processing file: {file} (type: {type(file)})")
         with open(file) as test_file:
             data = json.load(test_file)
+            print(f"Loaded JSON data keys: {data.keys()}")
             results.append(data)
     
-    # Prepare table data
+    # Prepare table data with debug output
     headers = ["Python Version", "Tests Run", "Passed", "Failed", "Skipped"]
+    print("\n=== Preparing Table Data ===")
     table_data = [
         [
             r['python_version'], 
@@ -222,6 +233,7 @@ def generate_test_comparison_report(files, output_dir):
         ]
         for r in results
     ]
+    print(f"Table data prepared: {len(table_data)} rows")
     
     with open(report_file, 'w') as f:
         # Main summary with tabulate
@@ -251,7 +263,7 @@ def generate_test_comparison_report(files, output_dir):
         # Tests Failing in All Versions
         f.write("## Tests Failing in All Versions\n\n")
         all_failures = [set((test['name'], test['error']) for test in result['failed_tests']) for result in results]
-        common_failures = set.intersection(*all_failures)
+        common_failures = set.intersection(*all_failures) if all_failures else set()
         
         if common_failures:
             for name, error in sorted(common_failures):
@@ -289,6 +301,20 @@ def generate_test_comparison_report(files, output_dir):
             
             if not new_failures and not fixed_failures:
                 f.write("*No differences in test failures*\n\n")
+    
+    # Keep existing XML comparison code
+    print("\n=== XML Test Count Comparison ===")
+    xml_files = sorted(output_dir.glob('test_results_*.xml'))
+    
+    for xml_file in xml_files:
+        print(f"\nAnalyzing {xml_file.name}:")
+        result = parse_xml_test_results(xml_file)
+        
+        if result:
+            print(f"Total Tests: {result['total_tests']}")
+            print(f"Errors: {result['errors']}")
+            print(f"Failures: {result['failures']}")
+            print(f"Skipped Tests: {result['skipped_tests']}")
     
     return report_file
 
@@ -595,6 +621,30 @@ def run_focused_comparison():
         print(f"\nMarkdown comparison report generated: {report_file}")
 
     print("\nComparison complete. Results are in the 'comparison_results' directory.")
+
+def parse_xml_test_results(xml_file):
+    """Parse XML test results and extract test count information"""
+    try:
+        tree = ET.parse(xml_file)
+        root = tree.getroot()
+        
+        # Extract test suite attributes
+        total_tests = int(root.get('tests', 0))
+        errors = int(root.get('errors', 0))
+        failures = int(root.get('failures', 0))
+        
+        # Count skipped tests
+        skipped_tests = len(root.findall(".//testcase[@status='skipped']"))
+        
+        return {
+            'total_tests': total_tests,
+            'errors': errors,
+            'failures': failures,
+            'skipped_tests': skipped_tests
+        }
+    except Exception as e:
+        print(f"Error parsing XML file {xml_file}: {e}")
+        return None
 
 if __name__ == "__main__":
     run_focused_comparison()
