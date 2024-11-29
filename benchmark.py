@@ -13,12 +13,11 @@ import psutil
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import List, Dict
+import time
 
 # Constants
 BREWPATH = "/opt/homebrew/bin/"
 PYTHON_BASE_VERSIONS = [
-    "3.9",
-    "3.10",
     "3.11",
     "3.12",
     "3.13",
@@ -119,13 +118,13 @@ def check_system_settings():
         print("System checks are currently only implemented for macOS")
         return True, []  # Allow benchmarks to proceed on other platforms
 
-def run_benchmark(python_path, output_dir, quick_mode=False):
+def run_benchmark(python_path, output_dir, bench_scope="default"):
     """Run benchmarks for testing report generation
     
     Args:
         python_path (str): Path to Python executable
         output_dir (Path/str): Directory to store benchmark results
-        quick_mode (bool): If True, runs only pyflate benchmark
+        bench_scope (str): One of "quick", "default", or "full" to determine benchmark scope
         
     Returns:
         Path/None: Path to benchmark results file if successful, None if failed
@@ -133,25 +132,37 @@ def run_benchmark(python_path, output_dir, quick_mode=False):
     Notes:
         - Checks system settings before running benchmarks
         - Creates timestamped JSON file for results
-        - Runs all benchmarks (json_dumps,richards,pyflate) if quick_mode is False
-        - Runs only pyflate benchmark if quick_mode is True
+        - Runs benchmarks based on scope:
+          * quick: only pyflate benchmark
+          * default: uses pyperformance's default benchmark group
+          * full: runs all available benchmarks (-b all)
         - Uses quiet environment settings to reduce output noise
     """
-    # First check system settings
+    # First check system settings with retries
     print("\nChecking system settings for benchmark suitability...")
-    is_suitable, issues = check_system_settings()
+    max_attempts = 20
+    delay_seconds = 30
     
-    if not is_suitable:
-        print("\n⚠️  Warning: System settings may affect benchmark accuracy:")
-        for issue in issues:
-            print(f"  • {issue}")
+    for attempt in range(max_attempts):
+        is_suitable, issues = check_system_settings()
         
-        response = input("\nContinue with benchmarks anyway? (y/N): ").lower()
-        if response != 'y':
-            print("Benchmarks aborted.")
+        if is_suitable:
+            print("✓ System settings suitable for benchmarking")
+            break
+            
+        if attempt < max_attempts - 1:
+            print(f"\n⚠️  Attempt {attempt + 1}/{max_attempts}: System not ready:")
+            for issue in issues:
+                print(f"  • {issue}")
+            print(f"\nWaiting {delay_seconds} seconds before next check...")
+            time.sleep(delay_seconds)
+        else:
+            print("\n❌ Maximum attempts reached. System settings are not suitable:")
+            for issue in issues:
+                print(f"  • {issue}")
+            print("\nPlease resolve these issues and try again.")
+            print("(To bypass this check, use --disable-system-check)")
             return None
-    
-    print("✓ System settings suitable for benchmarking")
     
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -186,19 +197,22 @@ def run_benchmark(python_path, output_dir, quick_mode=False):
     env = os.environ.copy()
     env.update(QUIET_ENV)
     
-    # Set benchmarks based on mode
-    benchmarks = "pyflate" if quick_mode else "json_dumps,richards,pyflate"
-    
     cmd = [
         python_path, "-m", "pyperformance", "run",
         "--python", python_path,
-        "--benchmarks", benchmarks,
         "--output", str(output_file),
         "--inherit-environ", ",".join(QUIET_ENV.keys())
     ]
     
+    # Only add benchmark specification if not using defaults
+    if bench_scope == "quick":
+        cmd.extend(["--benchmarks", "pyflate"])
+    elif bench_scope == "full":
+        cmd.extend(["--benchmarks", "all"])
+    # For "default", we don't specify any benchmarks to use pyperformance's defaults
+    
     try:
-        print(f"\nRunning {'quick' if quick_mode else 'standard'} benchmarks with {python_path}...")
+        print(f"\nRunning {bench_scope} benchmarks with {python_path}...")
         subprocess.run(cmd, env=env, check=True)
         print(f"Benchmark results saved to: {output_file}")
         return output_file
@@ -501,10 +515,22 @@ def parse_arguments():
                       help='Skip running performance benchmarks')
     parser.add_argument('--disable-system-check', action='store_true',
                       help='Skip system suitability check before benchmarking')
+    
+    # Benchmark scope group (mutually exclusive)
+    benchmark_scope = parser.add_mutually_exclusive_group()
+    benchmark_scope.add_argument("--bench-quick", action="store_true",
+                               help="Run only pyflate benchmark (fastest)")
+    benchmark_scope.add_argument("--bench-default", action="store_true",
+                               help="Run default benchmark group (default)")
+    benchmark_scope.add_argument("--bench-full", action="store_true",
+                               help="Run all available benchmarks (slowest)")
+    
+    # Preserve existing quick mode and unittest report flags
     parser.add_argument('--quick', action='store_true',
-                      help='Run minimal set of tests and benchmarks')
+                      help='Run minimal set of tests (does not affect benchmarks)')
     parser.add_argument('--unittest-report', action='store_true',
                       help='Generate unit test comparison report from existing files without running tests')
+    
     return parser.parse_args()
 
 def validate_and_compare_test_files(json_files, xml_files):
@@ -566,7 +592,7 @@ def run_focused_comparison():
     """Main function to run the focused comparison"""
     args = parse_arguments()
     
-    output_dir = Path("comparison_results")
+    output_dir = Path("benchmark_results")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.unittest_report:
@@ -619,15 +645,16 @@ def run_focused_comparison():
             
         print(f"\n=== Processing {python_path} ===")
         
-        # Run tests if enabled
+        # Run tests if enabled (preserving existing quick mode for tests)
         if not args.disable_test:
             test_result = run_tests(venv_python, output_dir, quick_mode=args.quick)
             if test_result:
                 test_results.append(test_result)
         
-        # Run benchmarks if enabled
+        # Run benchmarks if enabled (using updated bench scope)
         if not args.disable_benchmark:
-            perf_result = run_benchmark(venv_python, output_dir, quick_mode=args.quick)
+            bench_scope = "quick" if args.bench_quick else "full" if args.bench_full else "default"
+            perf_result = run_benchmark(venv_python, output_dir, bench_scope=bench_scope)
             if perf_result:
                 perf_results.append(perf_result)
     
@@ -642,27 +669,30 @@ def run_focused_comparison():
         print("\n=== Performance Comparison Results ===")
         comparison_python = get_venv_python(comparison_venv)
         
-        # Keep existing comparison functionality
-        for i in range(len(perf_results)-1):
-            print(f"\nComparing {Path(perf_results[i]).name} vs {Path(perf_results[i+1]).name}:")
-            subprocess.run([
-                comparison_python,
-                "-m", "pyperf", "compare_to",
-                "--table", str(perf_results[i]), str(perf_results[i+1])
-            ], check=True)
-        
-        # Add markdown report generation
+        # Generate markdown report comparing all versions at once
         report_file = output_dir / f"benchmark_comparison_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.md"
         with open(report_file, 'w') as f:
-            f.write("# Python Performance Comparison\n\n```\n")
+            f.write("# Python Performance Comparison\n\n")
+            f.write("## System Information\n")
+            f.write("```\n")
+            # Add system info - 'show' is the correct subcommand
+            subprocess.run([
+                comparison_python, "-m", "pyperf", "system", "show"
+            ], stdout=f, check=True)
+            f.write("```\n\n")
+            
+            f.write("## Benchmark Results\n")
+            f.write("```\n")
+            # Fixed command: changed 'compare' to 'compare_to' and moved --table to end
             subprocess.run([
                 comparison_python, "-m", "pyperf", "compare_to",
-                "--table", *[str(result) for result in perf_results]
+                *[str(result) for result in perf_results],
+                "--table","--table-format","md"
             ], stdout=f, check=True)
             f.write("```\n")
         print(f"\nMarkdown comparison report generated: {report_file}")
 
-    print("\nComparison complete. Results are in the 'comparison_results' directory.")
+    print("\nComparison complete. Results are in the 'benchmark_results' directory.")
 
 def parse_xml_test_results(xml_file):
     """Parse XML test results and extract test count information"""
