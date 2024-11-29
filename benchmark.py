@@ -11,6 +11,8 @@ import argparse
 import platform
 import psutil
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from typing import List, Dict
 
 # Constants
 BREWPATH = "/opt/homebrew/bin/"
@@ -302,20 +304,6 @@ def generate_test_comparison_report(files, output_dir):
             if not new_failures and not fixed_failures:
                 f.write("*No differences in test failures*\n\n")
     
-    # Keep existing XML comparison code
-    print("\n=== XML Test Count Comparison ===")
-    xml_files = sorted(output_dir.glob('test_results_*.xml'))
-    
-    for xml_file in xml_files:
-        print(f"\nAnalyzing {xml_file.name}:")
-        result = parse_xml_test_results(xml_file)
-        
-        if result:
-            print(f"Total Tests: {result['total_tests']}")
-            print(f"Errors: {result['errors']}")
-            print(f"Failures: {result['failures']}")
-            print(f"Skipped Tests: {result['skipped_tests']}")
-    
     return report_file
 
 def compare_results(file1, file2):
@@ -515,30 +503,84 @@ def parse_arguments():
                       help='Skip system suitability check before benchmarking')
     parser.add_argument('--quick', action='store_true',
                       help='Run minimal set of tests and benchmarks')
+    parser.add_argument('--unittest-report', action='store_true',
+                      help='Generate unit test comparison report from existing files without running tests')
     return parser.parse_args()
 
+def validate_and_compare_test_files(json_files, xml_files):
+    """Compare test counts between JSON and XML files"""
+    results = {}
+    
+    # Process JSON files
+    for json_file in json_files:
+        with open(json_file) as f:
+            data = json.load(f)
+            version = data['python_version']
+            results[version] = {'json': data}
+
+    # Process XML files
+    for xml_file in xml_files:
+        version = xml_file.stem.split('_')[2]  # Assuming version is in the filename
+        tree = ET.parse(xml_file)
+        root = tree.getroot()
+        
+        xml_data = {
+            'total_tests': int(root.get('tests', 0)),
+            'errors': int(root.get('errors', 0)),
+            'failures': int(root.get('failures', 0)),
+            'skipped': sum(1 for _ in root.findall('.//skipped'))
+        }
+        results[version]['xml'] = xml_data
+
+    # Print comparison
+    print("\nVersion by Version Comparison:")
+    print("-" * 80)
+    for version in sorted(results.keys()):
+        print(f"\nPython {version}:")
+        json_data = results[version]['json']
+        xml_data = results[version]['xml']
+        
+        print("  JSON Counts:")
+        print(f"    Tests Run: {json_data.get('tests_run', 'N/A')}")
+        print(f"    Tests Failed: {json_data.get('tests_failed', 'N/A')}")
+        print(f"    Tests Skipped: {json_data.get('tests_skipped', 'N/A')}")
+        print(f"    Failed Tests List Length: {len(json_data.get('failed_tests', []))}")
+        print(f"    Skipped Tests List Length: {len(json_data.get('skipped_tests', []))}")
+        
+        print("  XML Counts:")
+        print(f"    Total Tests: {xml_data.get('total_tests', 'N/A')}")
+        print(f"    Errors: {xml_data.get('errors', 'N/A')}")
+        print(f"    Failures: {xml_data.get('failures', 'N/A')}")
+        print(f"    Skipped: {xml_data.get('skipped', 'N/A')}")
+        
+        # Calculate and show discrepancies
+        if json_data and xml_data:
+            print("  Discrepancies:")
+            print(f"    Tests Run vs Total Tests: {json_data['tests_run']} vs {xml_data['total_tests']}")
+            print(f"    Failed Tests: {json_data['tests_failed']} vs {xml_data['failures'] + xml_data['errors']}")
+            print(f"    Skipped Tests: {json_data['tests_skipped']} vs {xml_data['skipped']}")
+    
+    return results
+
 def run_focused_comparison():
-    """Run both test suite and performance comparisons for multiple Python versions
-    
-    This function coordinates the execution of tests and benchmarks across different
-    Python versions. It handles:
-        - Command line argument parsing
-        - System suitability checks for benchmarking
-        - Virtual environment creation and management
-        - Test execution (full or quick mode)
-        - Benchmark execution (full or quick mode)
-        - Result collection and report generation
-    
-    Command line options:
-        --disable-test: Skip unit tests and test comparison
-        --disable-benchmark: Skip performance benchmarks
-        --disable-system-check: Skip system suitability check
-        --quick: Run minimal set of tests and benchmarks
-    """
+    """Main function to run the focused comparison"""
     args = parse_arguments()
+    
     output_dir = Path("comparison_results")
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
+    if args.unittest_report:
+        json_files = sorted(output_dir.glob('test_results_*.json'))
+        xml_files = sorted(output_dir.glob('test_results_*.xml'))
+        
+        # Generate the new comprehensive version comparison report
+        report_file = generate_version_comparison_report(json_files, xml_files, output_dir)
+        print(f"\nGenerated comprehensive unittest comparison report: {report_file}")
+        
+        # If there are any existing unittest report generation code, keep it here
+        validate_and_compare_test_files(json_files, xml_files)
+        return report_file
+
     # Only check system settings once at start if we're running benchmarks and checks aren't disabled
     if not args.disable_benchmark and not args.disable_system_check:
         print("\nChecking system settings for benchmark suitability...")
@@ -645,6 +687,294 @@ def parse_xml_test_results(xml_file):
     except Exception as e:
         print(f"Error parsing XML file {xml_file}: {e}")
         return None
+
+def validate_test_result_json(file_path):
+    """Validate JSON test result file structure and content"""
+    try:
+        with open(file_path) as f:
+            data = json.load(f)
+        
+        required_fields = [
+            'python_version', 'tests_run', 'tests_failed', 
+            'tests_skipped', 'failed_tests', 'skipped_tests'
+        ]
+        
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return False, f"Missing required fields: {', '.join(missing_fields)}"
+            
+        if not isinstance(data['python_version'], str):
+            return False, "python_version must be string"
+        if not isinstance(data['tests_run'], int):
+            return False, "tests_run must be integer"
+        if not isinstance(data['tests_failed'], int):
+            return False, "tests_failed must be integer"
+        if not isinstance(data['tests_skipped'], int):
+            return False, "tests_skipped must be integer"
+        if not isinstance(data['failed_tests'], list):
+            return False, "failed_tests must be list"
+        if not isinstance(data['skipped_tests'], list):
+            return False, "skipped_tests must be list"
+            
+        total = data['tests_failed'] + data['tests_skipped']
+        if total > data['tests_run']:
+            return False, "Failed + skipped tests exceed total tests run"
+            
+        return True, "Valid"
+        
+    except json.JSONDecodeError:
+        return False, "Invalid JSON format"
+    except Exception as e:
+        return False, f"Unexpected error: {str(e)}"
+
+def validate_test_result_xml(file_path):
+    """Validate XML test result file structure and content"""
+    try:
+        tree = ET.parse(file_path)
+        root = tree.getroot()
+        
+        if root.tag != 'testsuites' and root.tag != 'testsuite':
+            return False, "Root element must be 'testsuites' or 'testsuite'"
+        
+        required_attrs = ['tests', 'errors', 'failures']
+        
+        missing_attrs = [attr for attr in required_attrs if root.get(attr) is None]
+        if missing_attrs:
+            return False, f"Missing required attributes: {', '.join(missing_attrs)}"
+            
+        for attr in required_attrs:
+            try:
+                int(root.get(attr))
+            except ValueError:
+                return False, f"Attribute '{attr}' must be an integer"
+                
+        testcases = root.findall(".//testcase")
+        if not testcases:
+            return False, "No testcase elements found"
+            
+        return True, "Valid"
+        
+    except ET.ParseError:
+        return False, "Invalid XML format"
+    except Exception as e:
+        return False, f"Unexpected error: {str(e)}"
+
+def generate_version_comparison_report(json_files, xml_files, output_dir):
+    """Generate a comprehensive report comparing XML and JSON test results for each Python version"""
+    
+    results_by_version = {}
+    
+    # First, organize files by Python version
+    for json_file in json_files:
+        with open(json_file) as f:
+            data = json.load(f)
+            version = data['python_version']
+            if version not in results_by_version:
+                results_by_version[version] = {'json': data}
+    
+    for xml_file in xml_files:
+        version = xml_file.stem.split('_')[2]  # Assuming version is in filename
+        if version in results_by_version:
+            tree = ET.parse(xml_file)
+            root = tree.getroot()
+            
+            # Extract XML metrics
+            xml_data = {
+                'total_tests': int(root.get('tests', 0)),
+                'total_errors': int(root.get('errors', 0)),
+                'total_failures': int(root.get('failures', 0)),
+                'skipped_tests': sum(1 for _ in root.findall('.//skipped')),
+                'failures': extract_failures(root),  # Add detailed failure information
+                'file_metrics': {
+                    'total_files': 0,
+                    'files_run': 0,
+                    'files_failed': 0,
+                    'files_skipped': 0,
+                    'resource_denied': 0
+                }
+            }
+            
+            # Extract file metrics from the final summary in XML
+            for testcase in root.findall('.//testcase'):
+                if 'Total test files' in testcase.get('name', ''):
+                    error_text = testcase.find('error').text if testcase.find('error') else ''
+                    if error_text:
+                        # Parse metrics from error text
+                        matches = re.findall(r'run=(\d+)/(\d+) failed=(\d+) skipped=(\d+) resource_denied=(\d+)', error_text)
+                        if matches:
+                            run, total, failed, skipped, denied = map(int, matches[0])
+                            xml_data['file_metrics'].update({
+                                'total_files': total,
+                                'files_run': run,
+                                'files_failed': failed,
+                                'files_skipped': skipped,
+                                'resource_denied': denied
+                            })
+            
+            results_by_version[version]['xml'] = xml_data
+    
+    # Generate report
+    report_file = output_dir / f"version_comparison_report_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.md"
+    
+    with open(report_file, 'w') as f:
+        f.write("# Python Version Test Results Comparison\n\n")
+        
+        for version in sorted(results_by_version.keys()):
+            data = results_by_version[version]
+            f.write(f"## Python {version}\n\n")
+            
+            # JSON Results Section
+            f.write("### JSON Format Results\n")
+            json_data = data['json']
+            f.write("```python\n")
+            f.write("Primary Metrics:\n")
+            f.write(f"- Tests Run: {json_data['tests_run']}\n")
+            f.write(f"- Tests Failed: {json_data['tests_failed']}\n")
+            f.write(f"- Tests Skipped: {json_data['tests_skipped']}\n")
+            success_rate = 100 * (json_data['tests_run'] - json_data['tests_failed']) / json_data['tests_run'] if json_data['tests_run'] > 0 else 0
+            f.write(f"- Success Rate: {success_rate:.2f}%\n\n")
+            
+            # Group skipped tests by category
+            skip_categories = {
+                'Platform Dependencies': [],
+                'Resource Dependencies': [],
+                'Missing Modules': [],
+                'Build/Environment': []
+            }
+            
+            for skip in json_data['skipped_tests']:
+                error = skip['error'].lower()
+                if any(x in error for x in ['windows', 'android', 'macos']):
+                    skip_categories['Platform Dependencies'].append(skip['name'])
+                elif any(x in error for x in ['network', 'audio', 'cpu']):
+                    skip_categories['Resource Dependencies'].append(skip['name'])
+                elif 'no module' in error:
+                    skip_categories['Missing Modules'].append(skip['name'])
+                else:
+                    skip_categories['Build/Environment'].append(skip['name'])
+            
+            f.write("Skip Categories:\n")
+            for category, tests in skip_categories.items():
+                if tests:
+                    f.write(f"{category}: {len(tests)} tests\n")
+            f.write("```\n\n")
+            
+            # Updated XML Results Section
+            if 'xml' in data:
+                f.write("### XML Format Results\n")
+                xml_data = data['xml']
+                f.write("```python\n")
+                f.write("Primary Metrics:\n")
+                f.write(f"- Total Tests: {xml_data['total_tests']}\n")
+                f.write(f"- Total Errors: {xml_data['total_errors']}\n")
+                f.write(f"- Total Failures: {xml_data['total_failures']}\n")
+                f.write(f"- Total Skipped: {xml_data['skipped_tests']}\n")
+                success_rate = 100 * (xml_data['total_tests'] - xml_data['total_errors'] - xml_data['total_failures']) / xml_data['total_tests']
+                f.write(f"- Success Rate: {success_rate:.2f}%\n\n")
+                
+               
+            
+            # Format Comparison Section
+            f.write("### Format Comparison\n")
+            f.write("- XML provides detailed test execution metrics at both file and test level\n")
+            f.write("- JSON provides high-level suite results with detailed skip information\n")
+            f.write("- Skip patterns show correlation between resource denials and specific skip reasons\n\n")
+            
+            f.write("---\n\n")
+        
+        # Add Summary Tables at the end
+        f.write("\n## Summary Comparison Tables\n\n")
+        
+        # Prepare JSON Results Summary Table data
+        json_headers = ["Python Version", "Tests Run", "Tests Failed", "Tests Skipped", "Success Rate", 
+                       "Platform Deps", "Resource Deps", "Missing Modules", "Build/Env"]
+        json_table_data = []
+        
+        for version in sorted(results_by_version.keys(), reverse=True):
+            data = results_by_version[version]['json']
+            success_rate = 100 * (data['tests_run'] - data['tests_failed']) / data['tests_run'] if data['tests_run'] > 0 else 0
+            
+            # Count skip categories
+            skip_categories = {
+                'Platform Dependencies': 0,
+                'Resource Dependencies': 0,
+                'Missing Modules': 0,
+                'Build/Environment': 0
+            }
+            
+            for skip in data['skipped_tests']:
+                error = skip['error'].lower()
+                if any(x in error for x in ['windows', 'android', 'macos']):
+                    skip_categories['Platform Dependencies'] += 1
+                elif any(x in error for x in ['network', 'audio', 'cpu']):
+                    skip_categories['Resource Dependencies'] += 1
+                elif 'no module' in error:
+                    skip_categories['Missing Modules'] += 1
+                else:
+                    skip_categories['Build/Environment'] += 1
+            
+            json_table_data.append([
+                version,
+                data['tests_run'],
+                data['tests_failed'],
+                data['tests_skipped'],
+                f"{success_rate:.2f}%",
+                skip_categories['Platform Dependencies'],
+                skip_categories['Resource Dependencies'],
+                skip_categories['Missing Modules'],
+                skip_categories['Build/Environment']
+            ])
+        
+        # Write JSON Results table using tabulate
+        f.write("### JSON Results Summary\n")
+        f.write(tabulate(json_table_data, headers=json_headers, tablefmt="pipe", numalign="right", stralign="left"))
+        
+        # Prepare XML Results Summary Table data
+        xml_headers = ["Python Version", "Total Tests", "Errors", "Failures", "Skipped", "Success Rate"]
+        xml_table_data = []
+        
+        for version in sorted(results_by_version.keys(), reverse=True):
+            if 'xml' in results_by_version[version]:
+                xml_data = results_by_version[version]['xml']
+                success_rate = 100 * (xml_data['total_tests'] - xml_data['total_errors'] - xml_data['total_failures']) / xml_data['total_tests']
+                
+                xml_table_data.append([
+                    version,
+                    f"{xml_data['total_tests']:,}",
+                    xml_data['total_errors'],
+                    xml_data['total_failures'],
+                    xml_data['skipped_tests'],
+                    f"{success_rate:.2f}%"
+                ])
+        
+        # Write XML Results table using tabulate
+        f.write("\n\n### XML Results Summary\n")
+        f.write(tabulate(xml_table_data, headers=xml_headers, tablefmt="pipe", numalign="right", stralign="left"))
+        
+        f.write("\n")
+    
+    return report_file
+
+def extract_failures(xml_root):
+    """Extract failure details from XML test results"""
+    failures = []
+    for testcase in xml_root.findall('.//testcase'):
+        failure = testcase.find('failure')
+        error = testcase.find('error')
+        if failure is not None or error is not None:
+            test_name = testcase.get('name', 'Unknown test')
+            test_class = testcase.get('classname', '')
+            if test_class and test_name != 'Unknown test':
+                test_name = f"{test_class}.{test_name}"
+            
+            failure_detail = {
+                'name': test_name,
+                'type': 'failure' if failure is not None else 'error',
+                'message': (failure.get('message') if failure is not None 
+                          else error.get('message')) if failure is not None or error is not None else 'No message'
+            }
+            failures.append(failure_detail)
+    return failures
 
 if __name__ == "__main__":
     run_focused_comparison()
