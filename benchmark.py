@@ -426,7 +426,9 @@ def run_tests(python_path, output_dir, quick_mode=False):
         env = os.environ.copy()
         env.update({
             'CrashReporterDisabled': '1',
-            'NSDocumentRevisionsDebugMode': 'TRUE'
+            'NSDocumentRevisionsDebugMode': 'TRUE',
+            'PYTHONFAULTHANDLER': '1',
+            'MALLOC_PERMIT_INSANE_REQUESTS': '1'
         })
         
         # Base command with common options
