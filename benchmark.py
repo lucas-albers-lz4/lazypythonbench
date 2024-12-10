@@ -18,7 +18,6 @@ import time
 # Constants
 BREWPATH = "/opt/homebrew/bin/"
 PYTHON_BASE_VERSIONS = [
-    "3.11",
     "3.12",
     "3.13",
     ]
@@ -423,6 +422,13 @@ def run_tests(python_path, output_dir, quick_mode=False):
     print(f"Running tests with {python_path}...")
     
     try:
+        # Minimal environment variables needed to suppress crash dialogs on macOS
+        env = os.environ.copy()
+        env.update({
+            'CrashReporterDisabled': '1',
+            'NSDocumentRevisionsDebugMode': 'TRUE'
+        })
+        
         # Base command with common options
         cmd = [
             python_path, 
