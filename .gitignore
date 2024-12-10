@@ -1,0 +1,63 @@
+# Benchmark and test results
+comparison_results/
+test_results/
+*.json
+*.md
+
+# Python virtual environments - be specific to catch all variants
+venv*/
+.venv*/
+*venv/
+virtualenv/
+env*/
+.env*/
+*env/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.whl
+*.tar.gz
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-*
+.project
+.pydevproject
+
+# OS specific files
+.DS_Store
+Thumbs.db
+*.bak
+*~
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+
+# Environment variables
+.env
+.env.local
+.env.*
+
+# Homebrew specific
+homebrew-python-optimized/Formula/*.json
+homebrew-python-optimized/Formula/*.log
+
+# Performance profiling
+*.prof
+*.pstat
+*.lprof
