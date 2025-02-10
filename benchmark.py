@@ -16,7 +16,9 @@ from typing import List, Dict
 import time
 
 # Constants
-BREWPATH = "/opt/homebrew/bin/"
+BREWPATH = os.path.join(os.environ.get('HOMEBREW_PREFIX', '/opt/homebrew'), 'bin') + '/'
+#BREWPATH = "/home/linuxbrew/.linuxbrew/bin/"  # Kept as a comment for reference
+
 PYTHON_BASE_VERSIONS = [
     "3.12",
     "3.13",
