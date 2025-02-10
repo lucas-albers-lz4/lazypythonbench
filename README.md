@@ -25,32 +25,15 @@ I like how fast uv is at creating virtual enviroments.
 On macos it's a copy on write creation, so fast and space optimal.
 
 ```
-uv venv -p python3.12 venv; source venv/bin/activate; uv pip install -r requirements.txt 
-Using CPython 3.12.9 interpreter at: /opt/homebrew/opt/python@3.12/bin/python3.12
-Creating virtual environment at: venv
-Activate with: source venv/bin/activate
-Using Python 3.12.9 environment at: venv
-Resolved 17 packages in 271ms
-Prepared 9 packages in 559ms
-Installed 17 packages in 15ms
- + black==25.1.0
- + click==8.1.8
- + flake8==7.1.1
- + iniconfig==2.0.0
- + mccabe==0.7.0
- + mypy-extensions==1.0.0
- + packaging==24.2
- + pathspec==0.12.1
- + platformdirs==4.3.6
- + pluggy==1.5.0
- + psutil==6.1.1
- + pycodestyle==2.12.1
- + pyflakes==3.2.0
- + pyperf==2.8.1
- + pyperformance==1.11.0
- + pytest==8.3.4
- + tabulate==0.9.0
+uv venv -p python3.9 venv; source venv/bin/activate; uv pip install -r requirements.txt 
+source venv/bin/acticate
+``
+
+Then run a quick acceptance test, and benchmark python versions.
 ```
+
+```
+
 
 ## Output
 
