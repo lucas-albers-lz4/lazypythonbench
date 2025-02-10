@@ -687,9 +687,8 @@ def run_focused_comparison():
             f.write("## System Information\n")
             f.write("```\n")
             # Add system info - 'show' is the correct subcommand
-            subprocess.run([
-                comparison_python, "-m", "pyperf", "system", "show"
-            ], stdout=f, check=True)
+            system_info = get_system_info(comparison_python)
+            f.write(system_info)
             f.write("```\n\n")
             
             f.write("## Benchmark Results\n")
@@ -717,7 +716,7 @@ def parse_xml_test_results(xml_file):
         failures = int(root.get('failures', 0))
         
         # Count skipped tests
-        skipped_tests = len(root.findall(".//testcase[@status='skipped']"))
+        skipped_tests = len(root.findall(".//skipped"))
         
         return {
             'total_tests': total_tests,
@@ -1016,6 +1015,36 @@ def extract_failures(xml_root):
             }
             failures.append(failure_detail)
     return failures
+
+def get_system_info(comparison_python):
+    """
+    Retrieve system information in a platform-agnostic and permission-aware way
+    
+    Args:
+        comparison_python (str): Path to Python executable in virtual environment
+    
+    Returns:
+        str: Formatted system information string
+    """
+    try:
+        # Attempt to run pyperf system show, but handle permission errors
+        system_info = subprocess.run(
+            ['pyperf', 'system', 'show'], 
+            capture_output=True, 
+            text=True, 
+            timeout=10,
+            # Ignore permission errors and continue
+            check=False
+        )
+        
+        # If command fails due to permissions, return a note
+        if system_info.returncode != 0:
+            return f"Unable to retrieve full system info due to permissions.\nError: {system_info.stderr}"
+        
+        return system_info.stdout
+    except Exception as e:
+        # Catch any other unexpected errors
+        return f"Error retrieving system info: {e}"
 
 if __name__ == "__main__":
     run_focused_comparison()
