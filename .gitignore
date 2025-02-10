@@ -5,6 +5,7 @@ test_results/
 *.md
 
 # Python virtual environments - be specific to catch all variants
+venvs/
 venv*/
 .venv*/
 *venv/
@@ -61,3 +62,39 @@ homebrew-python-optimized/Formula/*.log
 *.prof
 *.pstat
 *.lprof
+
+# Virtual Environment
+venv/
+.venv/
+env/
+.env/
+
+# Environment Variables
+.env
+.env.*
+
+# Cache and Temporary Files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.prof
+*.pstat
+*.lprof
+
+# Test and Benchmark Results
+test_results/
+benchmark_results/
+comparison_results/
+
+# IDE Specific
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS Specific
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
