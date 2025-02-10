@@ -200,7 +200,8 @@ def run_benchmark(python_path, output_dir, bench_scope="default"):
         python_path, "-m", "pyperformance", "run",
         "--python", python_path,
         "--output", str(output_file),
-        "--inherit-environ", ",".join(QUIET_ENV.keys())
+        "--inherit-environ", ",".join(QUIET_ENV.keys()),
+        "--rigorous"
     ]
     
     # Only add benchmark specification if not using defaults
@@ -423,6 +424,8 @@ def run_tests(python_path, output_dir, quick_mode=False):
     
     try:
         # Minimal environment variables needed to suppress crash dialogs on macOS
+        #note this does not suppress crash dialogs on macOS, but reminds to fix it.
+        #TODO: fix crash dialogs on macOS
         env = os.environ.copy()
         env.update({
             'CrashReporterDisabled': '1',
