@@ -57,7 +57,7 @@ The tool performs several system checks before running benchmarks:
 
 Runs on Macos and Linux
 
-See example results in [docs/example_results.md](docs/example_results.md) and [docs/comparison_approach.md](docs/comparison_approach.md)
+See example results in [docs/example_results.md](docs/example_results.md) and explanation of the test results in [docs/comparison_approach.md](docs/comparison_approach.md)
 
 ## 🤝 Contributing
 
