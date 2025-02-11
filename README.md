@@ -59,7 +59,7 @@ Runs on macOS and Linux
 
 See example results in [docs/example_results.md](docs/example_results.md) 
 explanation of the test results in [docs/comparison_approach.md](docs/comparison_approach.md) 
-example benchmark report in [docs/benchmark_comparison_report.md](docs/benchmark_comparison_report.md)
+example benchmark report in [docs/benchmark_comparison.md](docs/benchmark_comparison.md)
 
 ## 🤝 Contributing
 
