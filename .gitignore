@@ -2,7 +2,7 @@
 comparison_results/
 test_results/
 *.json
-*.md
+#*.md
 
 # Python virtual environments - be specific to catch all variants
 venvs/
