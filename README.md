@@ -25,7 +25,7 @@ A tool for benchmarking and comparing different Python versions' performance and
 Example using uv
 ```
 uv venv -p python3.9 venv; source venv/bin/activate; uv pip install -r requirements.txt 
-source venv/bin/acticate
+source venv/bin/activate
 ```
 
 Then run a quick acceptance test, and benchmark python versions.
@@ -38,7 +38,7 @@ Then run the full benchmark.
 ./benchmark.py
 ```
 
-The benchmrk will take hours to complete.
+The benchmark will take hours to complete.
 
 ## Output
 
@@ -55,7 +55,7 @@ The tool performs several system checks before running benchmarks:
 - Background processes (Spotlight indexing, Time Machine)
 - System load and CPU usage
 
-Runs on Macos and Linux
+Runs on macOS and Linux
 
 See example results in [docs/example_results.md](docs/example_results.md) and explanation of the test results in [docs/comparison_approach.md](docs/comparison_approach.md)
 
