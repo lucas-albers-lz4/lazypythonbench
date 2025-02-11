@@ -610,7 +610,8 @@ def run_focused_comparison():
 
     # If regenerating report, find all existing JSON benchmark result files
     if args.regenerate_report:
-        perf_results = sorted(output_dir.glob('*.json'))
+        # Specifically filter for JSON files starting with 'python3'
+        perf_results = sorted(output_dir.glob('python3*.json'))
         
         if len(perf_results) < 2:
             print("Not enough benchmark result files to generate comparison. Need at least 2 files.")
@@ -642,6 +643,9 @@ def run_focused_comparison():
             f.write("```\n")
         
         print(f"\nMarkdown comparison report regenerated: {report_file}")
+        print("\nBenchmark files used:")
+        for result in perf_results:
+            print(f"  - {result.name}")
         return report_file
 
     # Only check system settings once at start if we're running benchmarks and checks aren't disabled
