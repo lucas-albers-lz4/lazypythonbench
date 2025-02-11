@@ -537,7 +537,8 @@ def parse_arguments():
                                help="Run default benchmark group (default)")
     benchmark_scope.add_argument("--bench-full", action="store_true",
                                help="Run all available benchmarks (slowest)")
-    
+    parser.add_argument('--regenerate-report', action='store_true',
+                  help='Regenerate markdown comparison report from existing benchmark files')
     # Preserve existing quick mode and unittest report flags
     parser.add_argument('--quick', action='store_true',
                       help='Run minimal set of tests (does not affect benchmarks)')
@@ -602,22 +603,45 @@ def validate_and_compare_test_files(json_files, xml_files):
     return results
 
 def run_focused_comparison():
-    """Main function to run the focused comparison"""
     args = parse_arguments()
     
     output_dir = Path("benchmark_results")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.unittest_report:
-        json_files = sorted(output_dir.glob('test_results_*.json'))
-        xml_files = sorted(output_dir.glob('test_results_*.xml'))
+    # If regenerating report, find all existing JSON benchmark result files
+    if args.regenerate_report:
+        perf_results = sorted(output_dir.glob('*.json'))
         
-        # Generate the new comprehensive version comparison report
-        report_file = generate_version_comparison_report(json_files, xml_files, output_dir)
-        print(f"\nGenerated comprehensive unittest comparison report: {report_file}")
+        if len(perf_results) < 2:
+            print("Not enough benchmark result files to generate comparison. Need at least 2 files.")
+            return None
         
-        # If there are any existing unittest report generation code, keep it here
-        validate_and_compare_test_files(json_files, xml_files)
+        # Use the comparison venv Python
+        comparison_venv = create_venv_if_needed(python_versions[0])
+        install_in_venv(comparison_venv, ["pyperf"])
+        comparison_python = get_venv_python(comparison_venv)
+        
+        # Generate markdown report comparing all versions at once
+        report_file = output_dir / f"benchmark_comparison_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.md"
+        with open(report_file, 'w') as f:
+            f.write("# Python Performance Comparison\n\n")
+            f.write("## System Information\n")
+            f.write("```\n")
+            # Add system info
+            system_info = get_system_info(comparison_python)
+            f.write(system_info)
+            f.write("```\n\n")
+            
+            f.write("## Benchmark Results\n")
+            f.write("```\n")
+            subprocess.run([
+                comparison_python, "-m", "pyperf", "compare_to",
+                *[str(result) for result in perf_results],
+                "--table","--table-format","md"
+            ], stdout=f, check=True)
+            f.write("```\n")
+        
+        print(f"\nMarkdown comparison report regenerated: {report_file}")
         return report_file
 
     # Only check system settings once at start if we're running benchmarks and checks aren't disabled
@@ -688,20 +712,20 @@ def run_focused_comparison():
             f.write("# Python Performance Comparison\n\n")
             f.write("## System Information\n")
             f.write("```\n")
-            # Add system info - 'show' is the correct subcommand
+            # Add system info
             system_info = get_system_info(comparison_python)
             f.write(system_info)
             f.write("```\n\n")
             
             f.write("## Benchmark Results\n")
             f.write("```\n")
-            # Fixed command: changed 'compare' to 'compare_to' and moved --table to end
             subprocess.run([
                 comparison_python, "-m", "pyperf", "compare_to",
                 *[str(result) for result in perf_results],
                 "--table","--table-format","md"
             ], stdout=f, check=True)
             f.write("```\n")
+        
         print(f"\nMarkdown comparison report generated: {report_file}")
 
     print("\nComparison complete. Results are in the 'benchmark_results' directory.")
