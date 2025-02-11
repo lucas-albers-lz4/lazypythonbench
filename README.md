@@ -12,7 +12,7 @@ A tool for benchmarking and comparing different Python versions' performance and
 
 ## Prerequisites
 
-- macOS (currently optimized for macOS, contributions welcome for other platforms)
+- macOS or Linux
 - Python 3.9 or higher
 - Homebrew (for managing Python versions)
 
@@ -20,20 +20,25 @@ A tool for benchmarking and comparing different Python versions' performance and
 
 1. Clone the repository:
 
-2. Create the virtual envi
-I like how fast uv is at creating virtual enviroments.
-On macos it's a copy on write creation, so fast and space optimal.
+2. Create the virtual environment and install the dependencies.
 
+Example using uv
 ```
 uv venv -p python3.9 venv; source venv/bin/activate; uv pip install -r requirements.txt 
 source venv/bin/acticate
-``
+```
 
 Then run a quick acceptance test, and benchmark python versions.
 ```
-
+./benchmark.py --disable-benchmark --disable-system-check
 ```
 
+Then run the full benchmark.
+```
+./benchmark.py
+```
+
+The benchmrk will take hours to complete.
 
 ## Output
 
@@ -50,15 +55,9 @@ The tool performs several system checks before running benchmarks:
 - Background processes (Spotlight indexing, Time Machine)
 - System load and CPU usage
 
-## 📚 Documentation
+Runs on Macos and Linux
 
-For detailed information about:
-- Benchmark methodology
-- System requirements
-- Test suite details
-- Report interpretation
-
-See the [docs](docs/README.md) directory.
+See example results in [docs/example_results.md](docs/example_results.md)
 
 ## 🤝 Contributing
 
