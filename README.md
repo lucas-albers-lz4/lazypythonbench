@@ -42,10 +42,11 @@ The benchmark will take hours to complete.
 
 ## Output
 
-Results are saved in:
-- `benchmark_results/`: Performance benchmark results
-- `test_results/`: Test suite results
-- Comparison reports are generated as markdown files
+All results are saved in `benchmark_results/`:
+- `python3*.json`: Performance benchmark results
+- `test_results_*.json` and `test_results_*.xml`: Test suite results
+- `benchmark_comparison_*.md`: Performance comparison reports
+- `version_comparison_report_*.md`: Test suite comparison reports
 
 ## 🔍 System Requirements
 
@@ -55,14 +56,15 @@ The tool performs several system checks before running benchmarks: (MacOS only)
 - Background processes (Spotlight indexing, Time Machine)
 - System load and CPU usage
 
-See example results in [docs/example_results.md](docs/example_results.md) 
-explanation of the test results in [docs/comparison_approach.md](docs/comparison_approach.md) 
-example benchmark report in [docs/benchmark_comparison.md](docs/benchmark_comparison.md)
+Example results:
+- See example results in [docs/example_results.md](docs/example_results.md) 
+- explanation of the test results in [docs/comparison_approach.md](docs/comparison_approach.md) 
+- example benchmark report in [docs/benchmark_comparison.md](docs/benchmark_comparison.md)
 
 ## 🤝 Contributing
 
 Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) before submitting pull requests.
-
+    
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
