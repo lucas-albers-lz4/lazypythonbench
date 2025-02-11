@@ -1,0 +1,101 @@
+```
+python3 ./benchmark.py --disable-benchmark --disable-system-check
+Creating virtual environment for python3.12
+
+=== Processing /home/linuxbrew/.linuxbrew/bin/python3.12 ===
+Running tests with venvs/python3.12-benchmark/bin/python...
+Return code: 2
+First 500 chars of stdout: == CPython 3.12.9 (main, Feb 4 2025, 14:38:38) [GCC 11.4.0]
+== Linux-6.8.0-52-generic-x86_64-with-glibc2.39 little-endian
+== Python build: release shared PGO
+== cwd: /tmp/test_python_worker_276120æ
+== CPU count: 16
+== encodings: locale=UTF-8 FS=utf-8
+== resources: all test resources are disabled, use -u option to unskip tests
+
+Using random seed: 4260840310
+0:00:00 load avg: 0.01 Run 492 tests in parallel using 18 worker processes
+0:00:00 load avg: 0.01 [  1/492] test.test_asyncio.test_buffered_p
+First 500 chars of stderr: 
+Test results saved to:
+  JSON: benchmark_results/test_results_3.12.9_2025-02-10_15-03-34.json
+  XML: benchmark_results/test_results_3.12.9_2025-02-10_15-03-34.xml
+Creating virtual environment for python3.13
+
+=== Processing /home/linuxbrew/.linuxbrew/bin/python3.13 ===
+Running tests with venvs/python3.13-benchmark/bin/python...
+Return code: 2
+First 500 chars of stdout: == CPython 3.13.2 (main, Feb 4 2025, 14:51:09) [GCC 11.4.0]
+== Linux-6.8.0-52-generic-x86_64-with-glibc2.39 little-endian
+== Python build: release shared PGO
+== cwd: /tmp/test_python_worker_295018æ
+== CPU count: 16
+== encodings: locale=UTF-8 FS=utf-8
+== resources: all test resources are disabled, use -u option to unskip tests
+
+Using random seed: 4073269690
+0:00:00 load avg: 2.86 Run 480 tests in parallel using 18 worker processes
+0:00:00 load avg: 2.86 [  1/480] test.test_asyncio.test_protocols 
+First 500 chars of stderr: 
+Test results saved to:
+  JSON: benchmark_results/test_results_3.13.2_2025-02-10_15-04-37.json
+  XML: benchmark_results/test_results_3.13.2_2025-02-10_15-04-37.xml
+
+=== Test Suite Comparison Results ===
+
+=== Debug: Test Files Content ===
+Number of files to process: 2
+
+Generating report at: benchmark_results/test_comparison_report_2025-02-10_15-05-41.md
+Processing file: benchmark_results/test_results_3.12.9_2025-02-10_15-03-34.json (type: <class 'pathlib.PosixPath'>)
+Loaded JSON data keys: dict_keys(['python_version', 'tests_run', 'tests_failed', 'tests_skipped', 'failed_tests', 'skipped_tests'])
+Processing file: benchmark_results/test_results_3.13.2_2025-02-10_15-04-37.json (type: <class 'pathlib.PosixPath'>)
+Loaded JSON data keys: dict_keys(['python_version', 'tests_run', 'tests_failed', 'tests_skipped', 'failed_tests', 'skipped_tests'])
+
+=== Preparing Table Data ===
+Table data prepared: 2 rows
+Test comparison report: benchmark_results/test_comparison_report_2025-02-10_15-05-41.md
+
+Comparison complete. Results are in the 'benchmark_results' directory.
+```
+
+And then those results 
+
+# Python Test Suite Comparison Report
+
+| Python Version   |   Tests Run |   Passed |   Failed |   Skipped |
+|:-----------------|------------:|---------:|---------:|----------:|
+| 3.12.9           |           7 |        0 |        0 |         7 |
+| 3.13.2           |           7 |        0 |        0 |         7 |
+
+## Failed and Skipped Tests by Version
+
+### Python 3.12.9
+#### Skipped:
+- 0: 0:00:01 load avg: 1.29 [23/37] test_asyncio.test_windows_events skipped (skipped)
+- test_asyncio.test_windows_events skipped -- Windows only: test_asyncio.test_windows_events skipped -- Windows only (skipped)
+- 0: 0:00:01 load avg: 1.29 [24/37] test_asyncio.test_windows_utils skipped (skipped)
+- test_asyncio.test_windows_utils skipped -- Windows only: test_asyncio.test_windows_utils skipped -- Windows only (skipped)
+- 2 tests skipped: 2 tests skipped: (skipped)
+- Total tests: Total tests: run=3,440 skipped=144 (skipped)
+- Total test files: Total test files: run=37/37 skipped=2 (skipped)
+
+### Python 3.13.2
+#### Skipped:
+- 0: 0:00:01 load avg: 1.63 [22/37] test_asyncio.test_windows_events skipped (skipped)
+- test_asyncio.test_windows_events skipped -- Windows only: test_asyncio.test_windows_events skipped -- Windows only (skipped)
+- 0: 0:00:01 load avg: 1.63 [24/37] test_asyncio.test_windows_utils skipped (skipped)
+- test_asyncio.test_windows_utils skipped -- Windows only: test_asyncio.test_windows_utils skipped -- Windows only (skipped)
+- 2 tests skipped: 2 tests skipped: (skipped)
+- Total tests: Total tests: run=3,512 skipped=97 (skipped)
+- Total test files: Total test files: run=37/37 skipped=2 (skipped)
+
+## Tests Failing in All Versions
+
+*No tests fail in all versions*
+
+## Failure Differences Between Versions
+
+### 3.12.9 → 3.13.2
+
+*No differences in test failures*
