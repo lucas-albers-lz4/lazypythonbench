@@ -49,13 +49,11 @@ Results are saved in:
 
 ## 🔍 System Requirements
 
-The tool performs several system checks before running benchmarks:
+The tool performs several system checks before running benchmarks: (MacOS only)
 - Power source (AC power required)
 - Available memory (minimum 25% of total RAM)
 - Background processes (Spotlight indexing, Time Machine)
 - System load and CPU usage
-
-Runs on macOS and Linux
 
 See example results in [docs/example_results.md](docs/example_results.md) 
 explanation of the test results in [docs/comparison_approach.md](docs/comparison_approach.md) 
