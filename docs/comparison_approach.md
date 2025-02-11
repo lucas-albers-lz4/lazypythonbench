@@ -1,10 +1,11 @@
-Test Result Comparison Strategy
-The comparison is primarily implemented in two key functions: generate_version_comparison_report() and validate_and_compare_test_files().
-Core Comparison Approach
-Dual Format Analysis
-The tool processes both JSON and XML test result files
-Each Python version gets a comprehensive analysis in both formats
-This allows cross-validation and provides multiple perspectives on test results
+# Test Result Comparison Strategy
+
+The comparison is primarily implemented in two key functions:  
+`generate_version_comparison_report()`  
+and `validate_and_compare_test_files()`.  
+The tool processes both JSON and XML test result files.  
+Each Python version gets a comprehensive analysis in both formats.  
+This allows cross-validation and provides multiple perspectives on test results.  
 
 ## Core Comparison Methodology
 
@@ -17,6 +18,7 @@ We process test results from two primary formats:
 ### Metrics Extraction
 
 #### JSON Results Extraction
+
 ```json
 {
     "tests_run": "total number of tests",
@@ -28,6 +30,7 @@ We process test results from two primary formats:
 ```
 
 #### XML Results Extraction
+
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <testsuite 
