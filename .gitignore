@@ -1,8 +1,8 @@
 # Benchmark and test results
 comparison_results/
 test_results/
+benchmark_results/
 *.json
-#*.md
 
 # Python virtual environments - be specific to catch all variants
 venvs/
@@ -12,7 +12,7 @@ venv*/
 virtualenv/
 env*/
 .env*/
-*env/
+.env/
 
 # Python cache files
 __pycache__/
@@ -54,47 +54,11 @@ Thumbs.db
 .env.local
 .env.*
 
-# Homebrew specific
-homebrew-python-optimized/Formula/*.json
-homebrew-python-optimized/Formula/*.log
-
 # Performance profiling
 *.prof
 *.pstat
 *.lprof
 
-# Virtual Environment
-venv/
-.venv/
-env/
-.env/
-
-# Environment Variables
-.env
-.env.*
-
-# Cache and Temporary Files
-__pycache__/
-*.py[cod]
-.pytest_cache/
-*.prof
-*.pstat
-*.lprof
-
-# Test and Benchmark Results
-test_results/
-benchmark_results/
-comparison_results/
-
-# IDE Specific
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS Specific
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
+# Homebrew specific
+homebrew-python-optimized/Formula/*.json
+homebrew-python-optimized/Formula/*.log
