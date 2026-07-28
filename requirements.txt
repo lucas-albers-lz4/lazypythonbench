@@ -3,8 +3,3 @@ tabulate>=0.8.9
 psutil>=5.8.0
 pyperf>=2.3.0
 pyperformance>=1.0.4
-
-# Development dependencies
-pytest>=7.0.0
-black>=22.0.0
-flake8>=4.0.0
