@@ -19,6 +19,10 @@ A tool for benchmarking and comparing different Python versions' performance and
 ## Installation
 
 1. Clone the repository:
+   ```bash
+   git clone https://github.com/lucas-albers-lz4/lazypythonbench.git
+   cd lazypythonbench
+   ```
 
 2. Create the virtual environment and install the dependencies.
 
@@ -50,11 +54,13 @@ All results are saved in `benchmark_results/`:
 
 ## 🔍 System Requirements
 
-The tool performs several system checks before running benchmarks: (MacOS only)
+The tool performs several system checks before running benchmarks:
 - Power source (AC power required)
 - Available memory (minimum 25% of total RAM)
 - Background processes (Spotlight indexing, Time Machine)
 - System load and CPU usage
+
+> **Note:** Detailed system suitability checks are currently only implemented for macOS. On Linux these checks are skipped and benchmarks proceed directly.
 
 Example results:
 - See example results in [docs/example_results.md](docs/example_results.md) 
