@@ -1,5 +1,7 @@
 # Python Version Performance Comparison Tool
 
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A tool for benchmarking and comparing different Python versions' performance and test results.
 
 ## Features
